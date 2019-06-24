@@ -1,0 +1,46 @@
+import fol_subst;
+
+export {
+
+unifyTermArrays(ts1 : [FolTerm], ts2 : [FolTerm]) -> Maybe<Tree<string, FolTerm>>;
+
+}
+
+unifyTermArrays(ts1 : [FolTerm], ts2 : [FolTerm]) -> Maybe<Tree<string, FolTerm>> {
+	if (length(ts1) != length(ts2)) None() else {
+		foldi(ts1, Some(makeTree()), \i, acc, t1 -> unifyTermsPair(t1, ts2[i], acc))
+	}
+}
+
+unifyTermsPair(t1 : FolTerm, t2 : FolTerm, msubst : Maybe<Tree<string, FolTerm>>) -> Maybe<Tree<string, FolTerm>> {
+	switch (msubst) {
+		None(): None();
+		Some(subst): {
+			t1s = applySubstToTerm(subst, t1);
+			t2s = applySubstToTerm(subst, t2);
+			switch (t1s) {
+				FolVar(v1):
+					switch (t2s) {
+						FolVar(v2):
+							if (v1 == v2) msubst else Some(setTree(subst, v1, FolVar(v2)))
+						FolFunc(__, __):
+							Some(setTree(subst, v1, t2s))
+					}
+				FolFunc(f1, args1):
+					switch (t2s) {
+						FolVar(v2): 
+							Some(setTree(subst, v2, t1s));
+						FolFunc(f2, args2): {
+							if (f1 == f2 && length(args1) == length(args2)) {
+								foldi(args1, msubst, \i, acc, arg1 ->
+									unifyTermsPair(arg1, args2[i], acc)
+								)
+							} else {
+								None();
+							}
+						}
+					}
+			}
+		}
+	}
+}
