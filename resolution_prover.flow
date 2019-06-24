@@ -37,4 +37,5 @@ main() {
 
 test_set = [
 "(A x.p(x) -> A x.p(f(x)))", 
+"(A x.p(x) & E x. -. p(f(x)))", 
 ];
