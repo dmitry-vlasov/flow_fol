@@ -1,0 +1,51 @@
+import string;
+
+export {
+	FolFormula ::= FolAnd, FolOr, FolImpl, FolNot, FolQuant, FolAtomic;
+		FolAnd(form1 : FolFormula, form2 : FolFormula);
+		FolOr(form1 : FolFormula, form2 : FolFormula);
+		FolImpl(premise : FolFormula, conclusion : FolFormula);
+		FolNot(form : FolFormula);
+		FolQuant(quant : Quant, form : FolFormula);
+
+	FolAtomic ::= FolPred, FolTrue, FolFalse;
+		FolPred(name : string, args : [FolTerm]);
+		FolTrue();
+		FolFalse();
+
+	Quant ::= Forall, Exists;
+		Forall(var : Var);
+		Exists(var : Var);
+
+	FolTerm ::= Var, Func;
+		Var(name : string);
+		Func(name : string, args : [FolTerm]);
+
+formula2string(f : FolFormula) -> string {
+	switch (f) {
+		FolAnd(f1, f2):  "(" + formula2string(f1) + " & " + formula2string(f2) + ")";
+		FolOr(f1, f2):   "(" + formula2string(f1) + " V " + formula2string(f2) + ")";
+		FolImpl(f1, f2): "(" + formula2string(f1) + " -> " + formula2string(f2) + ")";
+		FolNot(f1): "-. " + formula2string(f1);
+		FolQuant(q, f1):
+			switch(q) {
+				Forall(v): "A" + v.name + "." + formula2string(f1);
+				Exists(v): "E" + v.name + "." + formula2string(f1);
+			}
+		FolPred(n, args):
+			if (args == []) n else {
+				n + "(" + strGlue(map(args, \arg -> term2string(arg)), ", ") + ")";
+			}
+		FolTrue(): "T";
+		FolFalse(): "F";
+	}
+}
+
+term2string(t : FolTerm) -> string {
+	switch (t) {
+		Var(n): n; 
+		Func(n, args): n + "(" + strGlue(map(args, \arg -> term2string(arg)), ", ") + ")";
+	}
+}
+
+}

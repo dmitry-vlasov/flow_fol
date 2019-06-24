@@ -1,0 +1,60 @@
+import fol_parser;
+import fol_dpll;
+
+main() {
+	form_src =
+		if (isUrlParameterSet("formula")) 
+			[trim2(getUrlParameter("formula"), "\"")] 
+		else [
+			"A", 
+			"-. A", 
+			"-. -. A", 
+			"-. -. -.A", 
+			"(A & B)", 
+			"(A V B)",
+			"(A & -. A)",
+			"((A & B) -> -. B)",
+			"(((A & B) -> -. B) -> -. A)",
+			"(
+				((x V y) V z) & 
+				(
+					((x V y) V -. z) & 
+					(
+						((x V -. y) V z) & 
+						(
+							((x V -. y) V -. z) & 
+							(
+								((-. x V y) V z) & 
+								(
+									((-. x V y) V -. z) & 
+									(
+										((-. x V -. y) V z) & 
+										((-. x V -. y) V -. z)
+									)
+								)
+							)
+						)
+					)
+				)
+			)",
+			"-.((-. A -> B) -> (A V B))",
+		];
+	iter(form_src, 
+		\src -> {
+			switch (parseFolFormula(src)) {
+				Some(formula): {
+					println("SAT problem for formula: " + formula2string(formula));
+					switch (dpllFOL(formula)) {
+						Some(subst): 
+							println("\tYES: " + 
+								strGlue(map(tree2pairs(subst), \pair -> pair.first + "=" + b2s(pair.second)), ", ")
+							)
+						None():
+							println("\tNO")
+					}
+				}
+				None(): println("parsing error");
+			}
+		}
+	)
+}

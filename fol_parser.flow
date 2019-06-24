@@ -1,0 +1,43 @@
+import lingo/pegcode/driver;
+import fol_formula;
+
+export {
+	parseFolFormula(src : string) -> Maybe<FolFormula>;
+}
+
+fol_formula = 
+	"source = ws formula;
+	formula = 
+		\"(\" ws formula:a \"&\"  ws formula:b \")\" ws { FolAnd(:a, :b) } |
+		\"(\" ws formula:a \"V\"  ws formula:b \")\" ws { FolOr(:a, :b) } |
+		\"(\" ws formula:a \"->\" ws formula:b \")\" ws { FolImpl(:a, :b) } |
+		\"-.\" ws formula:a                  { FolNot(:a) } |
+		quant:q \".\" ws formula:a           { FolQuant(:q, :a) } |
+		\"T\" ws                             { FolTrue() } |
+		\"F\" ws                             { FolFalse() } |
+		name:n \"(\" ws term*:as \")\" ws    { FolPred(:n, :as) } |
+		name:n                               { createPred(:n) };
+	term = 
+		name:n \"(\" ws term*:as \")\" ws (\",\" ws)? { Func(:n, :as) } |
+		name:n (\",\" ws)?                            { Var(:n) };
+	quant =
+		\"A\" ws var:v { Forall(:v) } |
+		\"E\" ws var:v { Exists(:v) };
+	var = name:n { Var(:n) };
+
+	name = (!s char_)+$s ws { $s };
+	s = ws_+;
+	ws = ws_*;
+	ws_ = ' ' | '\\t' | '\\n' | '\\r';
+	char_ = !'(' !'&' !'V' !'-' !')' !',' !'.' '\\u0000'-'\\uFFFF';
+"
+
+fol_parser = compilePegGrammar(fol_formula);
+	
+parseFolFormula(src : string) -> Maybe<FolFormula> {
+	formula = parsic(fol_parser, src, SemanticActions(setTree(defaultPegActions.t, "createPred", \n -> FolPred(n[0], []))));
+	switch (formula) {
+		FolFormula(): Some(formula);
+		default: None()
+	}
+}

@@ -1,0 +1,193 @@
+import ds/tree;
+import ds/set;
+import fol_formula;
+
+export {
+	FolPNF(
+		quant : [Quant],
+		cnf : FolCNF
+	);
+	FolCNF(
+		conj : [FolDisj]
+	);
+	FolDisj(
+		disj : [FolLiteral]
+	);
+	FolLiteral(
+		sign : bool,
+		atom : FolPred
+	);
+
+toPNF(f : FolFormula) -> FolPNF;
+	
+pnf2string(f : FolPNF) -> string {
+	quant2string = \quant -> fold(quant, "", \acc, q -> 
+		switch(q) {
+			Forall(v): acc + "A" + v.name + ".";
+			Exists(v): acc + "E" + v.name + ".";
+		}
+	);
+	quant2string(f.quant) + cnf2string(f.cnf);
+}
+
+cnf2string(f : FolCNF) -> string {
+	lit2string = \l -> (if (l.sign) "" else "-. ") + formula2string(l.atom);
+	disj2string = \d -> "(" + strGlue(map(d.disj, \l -> lit2string(l)), " V ") + ")";
+	conj2string = \c -> "(" + strGlue(map(c.conj, \d -> disj2string(d)), " & ") + ")";
+	conj2string(f);
+}
+
+}
+
+elimImpl(f : FolFormula) -> FolFormula {
+	switch (f) {
+		FolAnd(form1, form2):
+			FolAnd(elimImpl(form1), elimImpl(form2));
+		FolOr(form1, form2):
+			FolOr(elimImpl(form1), elimImpl(form2));
+		FolImpl(premise, conclusion):
+			FolOr(FolNot(elimImpl(premise)), elimImpl(conclusion));
+		FolNot(form): 
+			FolNot(elimImpl(form));
+		FolQuant(quant, form): 
+			FolQuant(quant, elimImpl(form));
+		FolPred(name, args): f;
+		FolTrue():  f;
+		FolFalse(): f;
+	}
+}
+
+tightNegations(f : FolFormula) -> FolFormula {
+	switch (f) {
+		FolAnd(form1, form2):
+			FolAnd(tightNegations(form1), tightNegations(form2));
+		FolOr(form1, form2):
+			FolOr(tightNegations(form1), tightNegations(form2));
+		FolImpl(premise, conclusion):
+			FolOr(FolNot(elimImpl(premise)), elimImpl(conclusion));
+		FolNot(form): {
+			switch (form) {
+				FolAnd(form1, form2):
+					FolOr(tightNegations(FolNot(form1)), tightNegations(FolNot(form2)));
+				FolOr(form1, form2):
+					FolAnd(tightNegations(FolNot(form1)), tightNegations(FolNot(form2)));
+				FolImpl(premise, conclusion):
+					FolAnd(tightNegations(premise), tightNegations(FolNot(conclusion)));
+				FolNot(form1): 
+					tightNegations(form1);
+				FolQuant(quant, form1): {
+					switch (quant) {
+						Forall(var) : FolQuant(Exists(var), tightNegations(FolNot(form1)));
+						Exists(var) : FolQuant(Forall(var), tightNegations(FolNot(form1)));
+					}
+				}
+				FolPred(name, args): f;
+				FolTrue():  f;
+				FolFalse(): f;
+			}
+		}
+		FolQuant(quant, form): 
+			FolQuant(quant, tightNegations(form));
+		FolPred(name, args): f;
+		FolTrue():  f;
+		FolFalse(): f;
+	}
+}
+
+makeFreshVarsSubst(vars1 : [string], vars2 : Set<string>) -> Tree<string, string> {
+	fold(vars1, makeTree(), \acc, v -> {
+			if (!containsSet(vars2, v)) acc else {
+				w = for (v, \x -> containsSet(vars2, x), \x -> x + "'");
+				setTree(acc, v, w);
+			}
+		}
+	)
+}
+
+applyToQuant(subst : Tree<string, string>, quant : [Quant]) -> [Quant] {
+	map(quant, \q -> 
+		switch(q) {
+			Forall(var): Forall(Var(lookupTreeDef(subst, var.name, var.name)));
+			Exists(var): Exists(Var(lookupTreeDef(subst, var.name, var.name)));
+		}
+	)
+}
+
+applyToDisj(subst : Tree<string, string>, d : FolDisj) -> FolDisj {
+	FolDisj(
+		map(d.disj, 
+			\lit -> FolLiteral(lit.sign, 
+				FolPred(lit.atom.name, map(lit.atom.args, \arg -> applyToTerm(subst, arg)))
+			)
+		)
+	)
+}
+
+applyToTerm(subst : Tree<string, string>, term : FolTerm) -> FolTerm {
+	switch (term) {
+		Func(name, args): Func(name, map(args, \arg -> applyToTerm(subst, arg)));
+		Var(name): Var(lookupTreeDef(subst, name, name));
+	}
+}
+
+toPNF(f0 : FolFormula) -> FolPNF {
+	f = tightNegations(elimImpl(f0));
+	makeRenaming = \pf1, pf2 -> makeFreshVarsSubst(
+		map(pf1.quant, \q -> q.var.name),
+		fold(pf2.quant, makeSet(), \acc, q -> insertSet(acc, q.var.name))
+	);
+	switch (f) {
+		FolAnd(f1, f2): {
+			pf1 = toPNF(f1);
+			pf2 = toPNF(f2);
+			varRenaming = makeRenaming(pf1, pf2);
+			FolPNF(
+				concat(pf1.quant, applyToQuant(varRenaming, pf2.quant)),
+				FolCNF(
+					concat(
+						pf1.cnf.conj, 
+						map(pf2.cnf.conj, \disj -> applyToDisj(varRenaming, disj))
+					)
+				)
+			);
+		}
+		FolOr(f1, f2): {
+			pf1 = toPNF(f1);
+			pf2 = toPNF(f2);
+			varRenaming = makeRenaming(pf1, pf2);
+			FolPNF(
+				concat(pf1.quant, applyToQuant(varRenaming, pf2.quant)),
+				FolCNF(
+					fold(pf1.cnf.conj, [],
+						\acc, d1 -> fold(pf2.cnf.conj, acc,
+							\ac, d2 -> 
+								concat(ac, [FolDisj(concat(d1.disj, applyToDisj(varRenaming, d2).disj))])
+						)
+					)
+				)
+			);
+		}
+		FolQuant(q, f1): {
+			pf = toPNF(f1);
+			FolPNF(concat([q], pf.quant), pf.cnf);
+		}
+		FolNot(form): {
+			switch (form) {
+				FolPred(__,__): 
+					FolPNF([], FolCNF([FolDisj([FolLiteral(false, form)])]));
+				default:
+					// Non-tight negations: treat as a false formula
+					FolPNF([], FolCNF([FolDisj([])]));
+			}
+		}
+		FolPred(name, args): 
+			FolPNF([], FolCNF([FolDisj([FolLiteral(true, f)])]));
+		FolTrue(): 
+			FolPNF([], FolCNF([]));
+		FolFalse(): 
+			FolPNF([], FolCNF([FolDisj([])]));
+		FolImpl(__,__):
+			// Implication is not eliminated: treat as a false formula
+			FolPNF([], FolCNF([FolDisj([])]));
+	}
+}

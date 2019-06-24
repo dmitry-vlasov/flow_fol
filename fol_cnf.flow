@@ -1,0 +1,47 @@
+import fol_formula;
+
+export {
+	parseFolFormula(src : string) -> FolFormula;
+}
+
+fol_formula = 
+	"source = ws formula;
+	formula = 
+		\"(\" formula:a \"/\\\" formula:b \")\"  { FolAnd(:a, :b) } |
+		\"(\" formula:a \"\\/\" formula:b \")\"  { FolOr(:a, :b) } |
+		\"(\" formula:a \"->\" formula:b \")\"   { FolImpl(:a, :b) } |
+		\"-.\" formula:a                         { FolNot(:a) } |
+		\"A\" var:v formula:a                    { FolForall(:v, :a) } |
+		\"E\" var:v formula:a                    { FolExists(:v, :a) } |
+		name:n \"(\" terms:as \")\"              { FolPred(:n, :as) } |
+		\"T\"                                    { FolTrue() } |
+		\"F\"                                    { FolFalse() }
+	term = 
+		name:n \"(\" terms:as \")\" { FolFunc(:n, :as) } |
+		name:n                      { FolVar(n) }
+	var = name:n { FolVar(n) }
+	terms = 
+
+	const     = \"$c\" s string+:s \"$.\" ws { Const(:s) };
+	var       = \"$v\" s string+:v \"$.\" ws { Var(:v) };
+	disj      = \"$d\" s string+:d \"$.\" ws { Disj(:d) };
+
+	floating  = label:l \"$f\" s string:t string:v \"$.\" ws { Floating(:l, :t, :v) };
+	essential = label:l \"$e\" s expr:e \"$.\" ws { Essential(:l, :e) };
+	axiomatic = label:l \"$a\" s expr:e \"$.\" ws { Axiomatic(:l, :e) };
+	provable  = label:l \"$p\" s expr:e \"$=\" s proof:p { Provable(:l, :e, :p) };
+
+	proof     = label+:l \"$.\" ws { Proof(:l) };
+	expr      = symb+:s { Expr(:s) };
+
+	string    = (!s char_)+$s s { $s };
+	symb      = (!s char_)+$s s { createSymb($s) };
+	label     = (!s char_)+$l s { $l };
+	comment   = \"$(\" (!\"$\" char_ | \"$\" !\")\" char_)* $c \"$)\" ws { Comment($c) };
+	include   = \"$[\" (!\"$]\" char_)* $i \"$]\" ws { Include($i) };
+
+	s = ws_+;
+	ws = ws_*;
+	ws_ = ' ' | '\\t' | '\\n' | '\\r' | comment;
+	char_ = !'$' '\\u0000'-'\\uFFFF';"
+

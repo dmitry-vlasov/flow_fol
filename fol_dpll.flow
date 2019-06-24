@@ -1,0 +1,108 @@
+import fol_pnf;
+
+export {
+	dpllFOL(f : FolFormula) -> Maybe<Tree<string, bool>>;
+}
+
+dpllFOL(f : FolFormula) -> Maybe<Tree<string, bool>> {
+	ret = dpllCNF(DPLL_Env(toPNF(f).cnf, makeTree(), DPLL_Unknown()));
+	if (ret.status == DPLL_True()) {
+		Some(ret.subst)
+	} else if (ret.status == DPLL_False()) {
+		None()
+	} else {
+		println("Error: DPLL method is non-complete");
+		None()
+	}
+}
+
+DPLL_Env(
+	form : FolCNF,
+	subst : Tree<string, bool>,
+	status : DPLL_Status,
+);
+
+DPLL_Status ::= DPLL_True, DPLL_False, DPLL_Unknown;
+	DPLL_True(); DPLL_False(); DPLL_Unknown();
+
+dpllPropagateUnitStep(env: DPLL_Env, u : FolLiteral) -> DPLL_Env {
+	new_conj = fold(env.form.conj, [],
+		\acc, d -> {
+			switch (find(d.disj, \lit -> lit.atom.name == u.atom.name)) {
+			Some(lit):
+				if (lit.sign != u.sign) {
+					concat(acc, [FolDisj([])]);
+				} else {
+					new_disj = filter(d.disj, \l -> l.atom.name != u.atom.name);
+					if (new_disj == []) {
+						acc 
+					} else {
+					concat(acc, [FolDisj(new_disj)])
+					}
+				}
+			None(): concat(acc, [d])
+			}
+		}
+	);
+	if (exists(new_conj, \d -> d.disj == [])) {
+		DPLL_Env(FolCNF([FolDisj([])]), makeTree(), DPLL_False())
+	} else {
+		DPLL_Env(FolCNF(new_conj), setTree(env.subst, u.atom.name, u.sign), DPLL_Unknown())
+	}
+}
+
+dpllPropagateUnit(env : DPLL_Env)  -> DPLL_Env {
+	switch (find(env.form.conj, \d -> length(d.disj) == 1)) {
+		Some(d): dpllPropagateUnit(dpllPropagateUnitStep(env, d.disj[0]));
+		None(): env;
+	}
+}
+
+chooseVar(f : FolCNF) -> FolPred {
+	f.conj[0].disj[0].atom;
+}
+
+dpllPureLiterals(env : DPLL_Env) -> DPLL_Env {
+	vars = fold(env.form.conj, makeTree(), \acc, d ->
+		fold(d.disj, acc, 
+			\ac, lit -> {
+				pair = lookupTreeDef(ac, lit.atom.name, Pair(false, false));
+				if (lit.sign) {
+					setTree(ac, lit.atom.name, Pair(true, pair.second));
+				} else {
+					setTree(ac, lit.atom.name, Pair(pair.first, true));
+				}
+			}
+		)
+	);
+	pure_vars = foldTree(vars, makeSet(), \name, pair, acc -> 
+		if (pair.first && pair.second) acc else insertSet(acc, name)
+	);
+	DPLL_Env(
+		FolCNF(
+			filter(env.form.conj, \d -> forall(d.disj, \lit -> !containsSet(pure_vars, lit.atom.name)))
+		),
+		foldTree(vars, env.subst, \var, pair, acc -> 
+			if (pair.first && !pair.second) setTree(acc, var, true) else 
+			if (!pair.first && pair.second) setTree(acc, var, false) else acc
+		),
+		env.status
+	);
+}
+
+dpllCNF(env : DPLL_Env) -> DPLL_Env {
+	e1 = dpllPropagateUnit(env);
+	e2 = dpllPureLiterals(e1);
+	if (e2.form.conj == []) DPLL_Env(e2.form, e2.subst, DPLL_True()) else
+	if (exists(e2.form.conj, \d -> d.disj == [])) DPLL_Env(e2.form, makeTree(), DPLL_False())
+	else {
+		var = chooseVar(e2.form);
+		pos = dpllCNF(
+			DPLL_Env(e2 with form = FolCNF(concat(e2.form.conj, [FolDisj([FolLiteral(true, var)])])))
+		);
+		if (pos.status != DPLL_Unknown()) pos else
+		dpllCNF(
+			DPLL_Env(e2 with form = FolCNF(concat(e2.form.conj, [FolDisj([FolLiteral(false, var)])])))
+		)
+	}
+}
