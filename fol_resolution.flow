@@ -1,10 +1,10 @@
-import fol_norm;
+import fol_pnf;
 
 export {
-	dpllFOL(f : FolFormula) -> Maybe<Tree<string, bool>>;
+	resolutionFOL(f : FolFormula) -> Maybe<Tree<string, bool>>;
 }
 
-dpllFOL(f : FolFormula) -> Maybe<Tree<string, bool>> {
+resolutionFOL(f : FolFormula) -> Maybe<Tree<string, bool>> {
 	ret = dpllCNF(DPLL_Env(toPNF(f).cnf, makeTree(), DPLL_Unknown()));
 	if (ret.status == DPLL_True()) {
 		Some(ret.subst)

@@ -1,3 +1,4 @@
+import ds/tree;
 import string;
 
 export {
@@ -6,20 +7,65 @@ export {
 		FolOr(form1 : FolFormula, form2 : FolFormula);
 		FolImpl(premise : FolFormula, conclusion : FolFormula);
 		FolNot(form : FolFormula);
-		FolQuant(quant : Quant, form : FolFormula);
+		FolQuant(quant : FolQuantifier, form : FolFormula);
 
 	FolAtomic ::= FolPred, FolTrue, FolFalse;
 		FolPred(name : string, args : [FolTerm]);
 		FolTrue();
 		FolFalse();
 
-	Quant ::= Forall, Exists;
-		Forall(var : Var);
-		Exists(var : Var);
+	FolQuantifier ::= FolForall, FolExists;
+		FolForall(var : FolVar);
+		FolExists(var : FolVar);
 
-	FolTerm ::= Var, Func;
-		Var(name : string);
-		Func(name : string, args : [FolTerm]);
+	FolTerm ::= FolVar, FolFunc;
+		FolVar(name : string);
+		FolFunc(name : string, args : [FolTerm]);
+
+	FolSymb ::= FolFuncSymb, FolPredSymb;
+		FolFuncSymb(
+			name : string,
+			arity : int,
+		);
+		FolPredSymb(
+			name : string,
+			arity : int,
+		);
+
+formulaSign(f : FolFormula) -> Tree<string, FolSymb> {
+	doFormulaSign(f, makeTree())
+}
+		
+doFormulaSign(f : FolFormula, acc : Tree<string, FolSymb>) -> Tree<string, FolSymb> {
+	switch (f) {
+		FolAnd(f1, f2):   doFormulaSign(f1, doFormulaSign(f2, acc));
+		FolOr(f1, f2):    doFormulaSign(f1, doFormulaSign(f2, acc));
+		FolImpl(f1, f2):  doFormulaSign(f1, doFormulaSign(f2, acc));
+		FolNot(f1):       doFormulaSign(f1, acc);
+		FolQuant(q, f1):  doFormulaSign(f1, acc);
+		FolPred(n, args):
+			fold(args,
+				setTree(acc, n, FolPredSymb(n, length(args))),
+				\ac, arg -> doTermSign(arg, ac)
+			);
+		FolTrue(): acc;
+		FolFalse(): acc;
+	}
+}
+
+termSign(f : FolTerm) -> Tree<string, FolSymb> {
+	doTermSign(f, makeTree())
+}
+
+doTermSign(t : FolTerm, acc : Tree<string, FolSymb>) -> Tree<string, FolSymb> {
+	switch (t) {
+		FolFunc(n, args): 
+			fold(args, setTree(acc, n, FolFuncSymb(n, length(args))),
+				\ac, arg -> doTermSign(arg, ac)
+			);
+		FolVar(n): acc;
+	}
+}
 
 formula2string(f : FolFormula) -> string {
 	switch (f) {
@@ -29,8 +75,8 @@ formula2string(f : FolFormula) -> string {
 		FolNot(f1): "-. " + formula2string(f1);
 		FolQuant(q, f1):
 			switch(q) {
-				Forall(v): "A" + v.name + "." + formula2string(f1);
-				Exists(v): "E" + v.name + "." + formula2string(f1);
+				FolForall(v): "A" + v.name + "." + formula2string(f1);
+				FolExists(v): "E" + v.name + "." + formula2string(f1);
 			}
 		FolPred(n, args):
 			if (args == []) n else {
@@ -43,8 +89,8 @@ formula2string(f : FolFormula) -> string {
 
 term2string(t : FolTerm) -> string {
 	switch (t) {
-		Var(n): n; 
-		Func(n, args): n + "(" + strGlue(map(args, \arg -> term2string(arg)), ", ") + ")";
+		FolVar(n): n; 
+		FolFunc(n, args): n + "(" + strGlue(map(args, \arg -> term2string(arg)), ", ") + ")";
 	}
 }
 

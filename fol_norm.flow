@@ -1,0 +1,174 @@
+import ds/tree;
+import ds/set;
+import fol_subst;
+
+export {
+toPNF(f : FolFormula) -> FolPNF;
+
+skolemization(f : FolPNF) -> FolPNF;
+
+//herbrandization(f : FolPNF) -> FolPNF;
+
+}
+
+elimImpl(f : FolFormula) -> FolFormula {
+	switch (f) {
+		FolAnd(form1, form2):
+			FolAnd(elimImpl(form1), elimImpl(form2));
+		FolOr(form1, form2):
+			FolOr(elimImpl(form1), elimImpl(form2));
+		FolImpl(premise, conclusion):
+			FolOr(FolNot(elimImpl(premise)), elimImpl(conclusion));
+		FolNot(form): 
+			FolNot(elimImpl(form));
+		FolQuant(quant, form): 
+			FolQuant(quant, elimImpl(form));
+		FolPred(name, args): f;
+		FolTrue():  f;
+		FolFalse(): f;
+	}
+}
+
+tightNegations(f : FolFormula) -> FolFormula {
+	switch (f) {
+		FolAnd(form1, form2):
+			FolAnd(tightNegations(form1), tightNegations(form2));
+		FolOr(form1, form2):
+			FolOr(tightNegations(form1), tightNegations(form2));
+		FolImpl(premise, conclusion):
+			FolOr(FolNot(elimImpl(premise)), elimImpl(conclusion));
+		FolNot(form): {
+			switch (form) {
+				FolAnd(form1, form2):
+					FolOr(tightNegations(FolNot(form1)), tightNegations(FolNot(form2)));
+				FolOr(form1, form2):
+					FolAnd(tightNegations(FolNot(form1)), tightNegations(FolNot(form2)));
+				FolImpl(premise, conclusion):
+					FolAnd(tightNegations(premise), tightNegations(FolNot(conclusion)));
+				FolNot(form1): 
+					tightNegations(form1);
+				FolQuant(quant, form1): {
+					switch (quant) {
+						FolForall(var) : FolQuant(FolExists(var), tightNegations(FolNot(form1)));
+						FolExists(var) : FolQuant(FolForall(var), tightNegations(FolNot(form1)));
+					}
+				}
+				FolPred(name, args): f;
+				FolTrue():  f;
+				FolFalse(): f;
+			}
+		}
+		FolQuant(quant, form): 
+			FolQuant(quant, tightNegations(form));
+		FolPred(name, args): f;
+		FolTrue():  f;
+		FolFalse(): f;
+	}
+}
+
+makeFreshVarsSubst(vars1 : [string], vars2 : Set<string>) -> Tree<string, string> {
+	fold(vars1, makeTree(), \acc, v -> {
+			if (!containsSet(vars2, v)) acc else {
+				w = for (v, \x -> containsSet(vars2, x), \x -> x + "'");
+				setTree(acc, v, w);
+			}
+		}
+	)
+}
+
+toPNF(f0 : FolFormula) -> FolPNF {
+	f = tightNegations(elimImpl(f0));
+	makeRenaming = \pf1, pf2 -> makeFreshVarsSubst(
+		map(pf1.quant, \q -> q.var.name),
+		fold(pf2.quant, makeSet(), \acc, q -> insertSet(acc, q.var.name))
+	);
+	switch (f) {
+		FolAnd(f1, f2): {
+			pf1 = toPNF(f1);
+			pf2 = toPNF(f2);
+			pf2ren = applyRenamingToPNF(makeRenaming(pf1, pf2), pf2);
+			FolPNF(
+				concat(pf1.quant, pf2ren.quant),
+				FolCNF(concat(pf1.cnf.conj, pf2ren.cnf.conj))
+			);
+		}
+		FolOr(f1, f2): {
+			pf1 = toPNF(f1);
+			pf2 = toPNF(f2);
+			varRenaming = makeRenaming(pf1, pf2);
+			FolPNF(
+				concat(pf1.quant, map(pf2.quant, \q -> applyRenamingToQuantifier(varRenaming, q))),
+				FolCNF(
+					fold(pf1.cnf.conj, [],
+						\acc, d1 -> fold(pf2.cnf.conj, acc,
+							\ac, d2 -> 
+								concat(ac, [FolDisj(concat(d1.disj, applyRenamingToDisj(varRenaming, d2).disj))])
+						)
+					)
+				)
+			);
+		}
+		FolQuant(q, f1): {
+			pf = toPNF(f1);
+			FolPNF(concat([q], pf.quant), pf.cnf);
+		}
+		FolNot(form): {
+			switch (form) {
+				FolPred(__,__): 
+					FolPNF([], FolCNF([FolDisj([FolLiteral(false, form)])]));
+				default:
+					// Non-tight negations: treat as a false formula
+					FolPNF([], FolCNF([FolDisj([])]));
+			}
+		}
+		FolPred(name, args): 
+			FolPNF([], FolCNF([FolDisj([FolLiteral(true, f)])]));
+		FolTrue(): 
+			FolPNF([], FolCNF([]));
+		FolFalse(): 
+			FolPNF([], FolCNF([FolDisj([])]));
+		FolImpl(__,__):
+			// Implication is not eliminated: treat as a false formula
+			FolPNF([], FolCNF([FolDisj([])]));
+	}
+}
+
+skolemization(f : FolPNF) -> FolPNF {
+	used_names = buildSet(
+		getTreeKeys(fold(f.cnf.conj, makeTree(),
+			\acc, d -> fold(d.disj, acc, \ac, l -> 
+				fold(l.atom.args, ac, \a, arg ->
+					doTermSign(arg, a)
+				)
+			)
+		))
+	);
+	doSkolemization(f, [], used_names)
+}
+
+doSkolemization(f : FolPNF, vars : [FolVar], used_names : Set<string>) -> FolPNF {
+	if (length(f.quant) == 0) f else {
+		switch(f.quant[0]) {
+			FolForall(var): {
+				f1 = doSkolemization(FolPNF(tail(f.quant), f.cnf), concat(vars, [var]), used_names);
+				FolPNF(
+					concat([f.quant[0]], f1.quant),
+					f1.cnf
+				);
+			}
+			FolExists(var): {
+				fresh_func_name = for ("f_" + var.name, \x -> containsSet(used_names, x), \x -> x + "'");
+				doSkolemization(
+					FolPNF(tail(f.quant), 
+						applySubstToCNF(
+							makeTree1(var.name, FolFunc(fresh_func_name, vars)), 
+							f.cnf
+						)
+					), 
+					vars,
+					insertSet(used_names, fresh_func_name)
+				);
+			}
+		}
+	}
+}

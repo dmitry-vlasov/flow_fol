@@ -1,0 +1,140 @@
+import ds/tree;
+import ds/set;
+import fol_pnf;
+
+export {
+
+applyRenamingToFormula(renaming : Tree<string, string>, f : FolFormula) -> FolFormula;
+applyRenamingToTerm(renaming : Tree<string, string>, term : FolTerm) -> FolTerm;
+applyRenamingToQuantifier(renaming : Tree<string, string>, q : FolQuantifier) -> FolQuantifier;
+applyRenamingToPNF(renaming : Tree<string, string>, f : FolPNF) -> FolPNF;
+applyRenamingToCNF(renaming : Tree<string, string>, f : FolCNF) -> FolCNF;
+applyRenamingToDisj(renaming : Tree<string, string>, d : FolDisj) -> FolDisj;
+
+applySubstToFormula(subst : Tree<string, FolTerm>, f : FolFormula) -> FolFormula;
+applySubstToTerm(subst : Tree<string, FolTerm>, term : FolTerm) -> FolTerm;
+applySubstToQuantifier(subst : Tree<string, FolTerm>, q : FolQuantifier) -> FolQuantifier;
+applySubstToCNF(subst : Tree<string, FolTerm>, f : FolCNF) -> FolCNF;
+applySubstToDisj(subst : Tree<string, FolTerm>, d : FolDisj) -> FolDisj;
+
+}
+
+applyRenamingToFormula(renaming : Tree<string, string>, f : FolFormula) -> FolFormula {
+	switch (f) {
+		FolAnd(f1, f2):
+			FolAnd(applyRenamingToFormula(renaming, f1), applyRenamingToFormula(renaming, f2));
+		FolOr(f1, f2):
+			FolOr(applyRenamingToFormula(renaming, f1), applyRenamingToFormula(renaming, f2));
+		FolImpl(p, c):
+			FolImpl(applyRenamingToFormula(renaming, p), applyRenamingToFormula(renaming, c));
+		FolNot(f1): 
+			FolNot(applyRenamingToFormula(renaming, f1));
+		FolQuant(q, f1): 
+			FolQuant(applyRenamingToQuantifier(renaming, q), applyRenamingToFormula(renaming, f1));
+		FolPred(name, args): 
+			FolPred(lookupTreeDef(renaming, name, name), map(args, \arg -> applyRenamingToTerm(renaming, arg)));
+		FolTrue():  f;
+		FolFalse(): f;
+	}
+}
+
+applyRenamingToTerm(renaming : Tree<string, string>, term : FolTerm) -> FolTerm {
+	switch (term) {
+		FolFunc(name, args): FolFunc(lookupTreeDef(renaming, name, name), map(args, \arg -> applyRenamingToTerm(renaming, arg)));
+		FolVar(name): FolVar(lookupTreeDef(renaming, name, name));
+	}
+}
+
+applyRenamingToQuantifier(renaming : Tree<string, string>, q : FolQuantifier) -> FolQuantifier {
+	switch (q) {
+		FolForall(v): FolForall(FolVar(lookupTreeDef(renaming, v.name, v.name)));
+		FolExists(v): FolExists(FolVar(lookupTreeDef(renaming, v.name, v.name)));
+	}
+}
+
+applyRenamingToPNF(renaming : Tree<string, string>, f : FolPNF) -> FolPNF {
+	FolPNF(
+		map(f.quant, \q-> applyRenamingToQuantifier(renaming, q)),
+		applyRenamingToCNF(renaming, f.cnf)
+	)
+}
+
+applyRenamingToCNF(renaming : Tree<string, string>, f : FolCNF) -> FolCNF {
+	FolCNF(map(f.conj, \disj -> applyRenamingToDisj(renaming, disj)))
+}
+
+applyRenamingToDisj(renaming : Tree<string, string>, d : FolDisj) -> FolDisj {
+	FolDisj(
+		map(d.disj, 
+			\lit -> FolLiteral(lit.sign, 
+				FolPred(lit.atom.name, map(lit.atom.args, \arg -> applyRenamingToTerm(renaming, arg)))
+			)
+		)
+	)
+}
+
+applySubstToFormula(subst : Tree<string, FolTerm>, f : FolFormula) -> FolFormula {
+	switch (f) {
+		FolAnd(f1, f2):
+			FolAnd(applySubstToFormula(subst, f1), applySubstToFormula(subst, f2));
+		FolOr(f1, f2):
+			FolOr(applySubstToFormula(subst, f1), applySubstToFormula(subst, f2));
+		FolImpl(p, c):
+			FolImpl(applySubstToFormula(subst, p), applySubstToFormula(subst, c));
+		FolNot(f1): 
+			FolNot(applySubstToFormula(subst, f1));
+		FolQuant(q, f1): 
+			FolQuant(applySubstToQuantifier(subst, q), applySubstToFormula(subst, f1));
+		FolPred(name, args):
+			FolPred(name, map(args, \arg -> applySubstToTerm(subst, arg)));
+		FolTrue():  f;
+		FolFalse(): f;
+	}
+}
+
+applySubstToTerm(subst : Tree<string, FolTerm>, term : FolTerm) -> FolTerm {
+	switch (term) {
+		FolFunc(name, args): FolFunc(name, map(args, \arg -> applySubstToTerm(subst, arg)));
+		FolVar(name): 
+			switch (lookupTree(subst, name)) {
+				Some(new_term): new_term;
+				None(): term;
+			}
+	}
+}
+
+applySubstToQuantifier(subst : Tree<string, FolTerm>, q : FolQuantifier) -> FolQuantifier {
+	switch (lookupTree(subst, q.var.name)) {
+		Some(t):
+			switch (t) {
+				FolVar(new_name):
+					switch (q) {
+						FolForall(v): FolForall(FolVar(new_name));
+						FolExists(v): FolExists(FolVar(new_name));
+					}
+				default: q;
+			}
+		None(): q;
+	}
+}
+
+applySubstToPNF(subst : Tree<string, FolTerm>, f : FolPNF) -> FolPNF {
+	FolPNF(
+		map(f.quant, \q-> applySubstToQuantifier(subst, q)),
+		applySubstToCNF(subst, f.cnf)
+	)
+}
+
+applySubstToCNF(subst : Tree<string, FolTerm>, f : FolCNF) -> FolCNF {
+	FolCNF(map(f.conj, \disj -> applySubstToDisj(subst, disj)))
+}
+
+applySubstToDisj(subst : Tree<string, FolTerm>, d : FolDisj) -> FolDisj {
+	FolDisj(
+		map(d.disj, 
+			\lit -> FolLiteral(lit.sign, 
+				FolPred(lit.atom.name, map(lit.atom.args, \arg -> applySubstToTerm(subst, arg)))
+			)
+		)
+	)
+}
