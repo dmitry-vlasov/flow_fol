@@ -1,3 +1,4 @@
+import fs/filesystem;
 import fol_parser;
 import fol_dpll;
 
@@ -5,40 +6,15 @@ main() {
 	form_src =
 		if (isUrlParameterSet("formula")) 
 			[trim2(getUrlParameter("formula"), "\"")] 
-		else [
-			"A", 
-			"-. A", 
-			"-. -. A", 
-			"-. -. -.A", 
-			"(A & B)", 
-			"(A V B)",
-			"(A & -. A)",
-			"((A & B) -> -. B)",
-			"(((A & B) -> -. B) -> -. A)",
-			"(
-				((x V y) V z) & 
-				(
-					((x V y) V -. z) & 
-					(
-						((x V -. y) V z) & 
-						(
-							((x V -. y) V -. z) & 
-							(
-								((-. x V y) V z) & 
-								(
-									((-. x V y) V -. z) & 
-									(
-										((-. x V -. y) V z) & 
-										((-. x V -. y) V -. z)
-									)
-								)
-							)
-						)
-					)
-				)
-			)",
-			"-.((-. A -> B) -> (A V B))",
-		];
+		else if (isUrlParameterSet("file")) {
+			file = getUrlParameterDef("file", "");
+			if (fileExists(file)) {
+				filter(strSplit(getFileContent(file), "\n"), \s -> s != "")
+			} else {
+				println("file: " + file + " is not found");
+				[]
+			}
+		} else test_set;
 	iter(form_src, 
 		\src -> {
 			switch (parseFolFormula(src)) {
@@ -58,3 +34,38 @@ main() {
 		}
 	)
 }
+
+test_set = [
+"A", 
+"-. A", 
+"-. -. A", 
+"-. -. -.A", 
+"(A & B)", 
+"(A V B)",
+"(A & -. A)",
+"((A & B) -> -. B)",
+"(((A & B) -> -. B) -> -. A)",
+"(
+	((x V y) V z) & 
+	(
+		((x V y) V -. z) & 
+		(
+			((x V -. y) V z) & 
+			(
+				((x V -. y) V -. z) & 
+				(
+					((-. x V y) V z) & 
+					(
+						((-. x V y) V -. z) & 
+						(
+							((-. x V -. y) V z) & 
+							((-. x V -. y) V -. z)
+						)
+					)
+				)
+			)
+		)
+	)
+)",
+"-.((-. A -> B) -> (A V B))",
+];
