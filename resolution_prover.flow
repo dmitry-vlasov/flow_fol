@@ -22,8 +22,8 @@ main() {
 					println("SAT problem for formula: " + formula2string(formula));
 					switch (resolutionFOL(formula)) {
 						Some(subst): 
-							println("\tYES: "
-								/*strGlue(map(tree2pairs(subst), \pair -> pair.first + "=" + b2s(pair.second)), ", ")*/
+							println("\tYES: " +
+								strGlue(map(tree2pairs(subst), \pair -> pair.first + "=" + term2string(pair.second)), ", ")
 							)
 						None():
 							println("\tNO")
@@ -36,36 +36,5 @@ main() {
 }
 
 test_set = [
-"A", 
-"-. A", 
-"-. -. A", 
-"-. -. -.A", 
-"(A & B)", 
-"(A V B)",
-"(A & -. A)",
-"((A & B) -> -. B)",
-"(((A & B) -> -. B) -> -. A)",
-"(
-	((x V y) V z) & 
-	(
-		((x V y) V -. z) & 
-		(
-			((x V -. y) V z) & 
-			(
-				((x V -. y) V -. z) & 
-				(
-					((-. x V y) V z) & 
-					(
-						((-. x V y) V -. z) & 
-						(
-							((-. x V -. y) V z) & 
-							((-. x V -. y) V -. z)
-						)
-					)
-				)
-			)
-		)
-	)
-)",
-"-.((-. A -> B) -> (A V B))",
+"(A x.p(x) -> A x.p(f(x)))", 
 ];

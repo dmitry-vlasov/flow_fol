@@ -18,18 +18,18 @@ fol_formula =
 		name:n \"(\" ws term*:as \")\" ws    { FolPred(:n, :as) } |
 		name:n                               { createPred(:n) };
 	term = 
-		name:n \"(\" ws term*:as \")\" ws (\",\" ws)? { Func(:n, :as) } |
-		name:n (\",\" ws)?                            { Var(:n) };
+		name:n \"(\" ws term*:as \")\" ws (\",\" ws)? { FolFunc(:n, :as) } |
+		name:n (\",\" ws)?                            { FolVar(:n) };
 	quant =
-		\"A\" ws var:v { Forall(:v) } |
-		\"E\" ws var:v { Exists(:v) };
-	var = name:n { Var(:n) };
+		\"A\" ws var:v { FolForall(:v) } |
+		\"E\" ws var:v { FolExists(:v) };
+	var = name:n { FolVar(:n) };
 
 	name = (!s char_)+$s ws { $s };
 	s = ws_+;
 	ws = ws_*;
 	ws_ = ' ' | '\\t' | '\\n' | '\\r';
-	char_ = !'(' !'&' !'V' !'-' !')' !',' !'.' '\\u0000'-'\\uFFFF';
+	char_ = !'(' !'&' !'V' !'-' !')' !',' !'.' !' ' '\\u0000'-'\\uFFFF';
 "
 
 fol_parser = compilePegGrammar(fol_formula);
