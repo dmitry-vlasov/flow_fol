@@ -3,39 +3,35 @@ import fol_parser;
 import fol_resolution;
 
 main() {
-	form_src =
-		if (isUrlParameterSet("formula")) 
-			[trim2(getUrlParameter("formula"), "\"")] 
-		else if (isUrlParameterSet("file")) {
-			file = getUrlParameterDef("file", "");
-			if (fileExists(file)) {
-				filter(strSplit(getFileContent(file), "\n"), \s -> s != "")
-			} else {
-				println("file: " + file + " is not found");
-				[]
-			}
-		} else test_set;
-	iter(form_src, 
-		\src -> {
-			switch (parseFolFormula(src)) {
-				Some(formula): {
-					println("SAT problem for formula: " + formula2string(formula));
-					switch (resolutionFOL(formula)) {
-						Some(subst): 
-							println("\tYES: " +
-								strGlue(map(tree2pairs(subst), \pair -> pair.first + "=" + term2string(pair.second)), ", ")
-							)
-						None():
-							println("\tNO")
-					}
-				}
-				None(): println("parsing error");
-			}
+	Peano_ax = map(Peano_ax_src, \ax -> parseFolFormulaDef(ax, FolFalse()));
+	println("Peano axioms: ");
+	iter(Peano_ax, \ax -> println("\t" + formula2string(ax)));
+	Peano_tests = map(Peano_tests_src, \t -> parseFolFormulaDef(t, FolFalse()));
+	iter(Peano_tests, 
+		\test -> {
+			println("Does Peano axioms imply: " + formula2string(test) + "?");
+			println("\t" + (if (resolutionEntailment(Peano_ax, test)) "YES" else "NO"));
 		}
 	)
 }
 
-test_set = [
-"(A x.p(x) -> A x.p(f(x)))", 
-"(A x.p(x) & E x. -. p(f(x)))", 
+Peano_ax_src = [
+	"A x. +(x, 0(), x)", 
+	"A x. A y. A z. (+(x, y, z) -> +(x, s(y), s(z)))",
+	"A x. *(x, 0(), 0())", 
+	"A x. *(x, s(0()), x)", 
+	"A x. A y. A z. (E t. (+(t, x, z) & *(x, y, t)) -> *(x, s(y), z))",
+];
+
+Peano_tests_src = [
+	"+(s(0()), s(0()), 0())",
+	"+(s(0()), s(0()), s(s(0())))",
+	"+(s(0()), s(0()), s(0()))",
+	"+(s(0()), s(0()), s(s(s(0()))))",
+	"+(s(s(0())), s(s(0())), s(s(s(s(0())))))",
+	
+	"*(s(s(0())), s(0()), s(s(0())))",
+	"*(s(0()), s(s(0())), s(s(0())))",
+	"*(s(s(0())), s(s(0())), s(s(s(s(0())))))",
+	"*(s(s(0())), s(s(0())), s(s(s(0()))))",
 ];

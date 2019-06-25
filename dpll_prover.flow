@@ -20,7 +20,7 @@ main() {
 			switch (parseFolFormula(src)) {
 				Some(formula): {
 					println("SAT problem for formula: " + formula2string(formula));
-					switch (dpllFOL(formula)) {
+					switch (dpllSAT(formula)) {
 						Some(subst): 
 							println("\tYES: " + 
 								strGlue(map(tree2pairs(subst), \pair -> pair.first + "=" + b2s(pair.second)), ", ")

@@ -2,12 +2,25 @@ import fol_unify;
 import fol_norm;
 
 export {
-	resolutionFOL(f : FolFormula) -> Maybe<Tree<string, FolTerm>>;
+	resolutionUNSAT(f : FolFormula) -> Maybe<Tree<string, FolTerm>>;
+	resolutionEntailment(premises : [FolFormula], conclusion : FolFormula) -> bool;
 }
 
-resolutionFOL(f : FolFormula) -> Maybe<Tree<string, FolTerm>> {
+resolutionEntailment(premises : [FolFormula], conclusion : FolFormula) -> bool {
+	premises_conj = fold(premises, FolTrue(), \acc, p -> FolAnd(acc, p));
+	goal = FolAnd(premises_conj, FolNot(conclusion));
+	switch (resolutionUNSAT(goal)) {
+		Some(__): true;
+		None(): false;
+	}
+}
+
+resolutionUNSAT(f : FolFormula) -> Maybe<Tree<string, FolTerm>> {
 	ret = runResolution(ResolutionEnv(skolemization(toPNF(f)).cnf, makeTree(), ResolUnknown()));
 	if (ret.status == ResolUnknown()) {
+		println("Error: incomplete resolution");
+		None();
+	} else if (ret.status == ResolSAT()) {
 		None();
 	} else {
 		Some(ret.subst)
@@ -23,25 +36,35 @@ ResolutionEnv(
 ResolStatus ::= ResolSAT, ResolUNSAT, ResolUnknown;
 	ResolSAT(); ResolUNSAT(); ResolUnknown();
 
+reduceDisj(d : FolDisj) -> FolDisj {
+	FolDisj(fold(d.disj, [], \acc, l1 ->
+			if (exists(acc, \l2 -> l2 == l1)) acc else concat(acc, [l1])
+		)
+	)
+}
+	
 contraryPairs(env : ResolutionEnv, d1 : FolDisj, ci : int, d2 : FolDisj, cj : int) -> [ResolutionEnv] {
 	foldi(d1.disj, [], \di, acc, l1 ->
 		foldi(d2.disj, acc, \dj, ac, l2 ->
 			if (l1.atom.name == l2.atom.name && l1.sign != l2.sign) {
 				switch (unifyTermArrays(l1.atom.args, l2.atom.args)) {
 					Some(s): {
+						cnf = FolCNF(
+							concat(
+								env.form.conj,
+								[
+									reduceDisj(applySubstToDisj(s, FolDisj(
+										concat(
+											filtermapi(d1.disj, \k, l -> if (k == di) None() else Some(l)),
+											filtermapi(d2.disj, \k, l -> if (k == dj) None() else Some(l))
+										)
+									)))
+								]
+							)
+						);
 						concat(ac, [
 							ResolutionEnv(
-								applySubstToCNF(s, FolCNF(
-									concat(
-										filtermapi(env.form.conj, \k, d -> if (k == ci || k == cj) None() else Some(d)),
-										[FolDisj(
-											concat(
-												filtermapi(d1.disj, \k, l -> if (k == di) None() else Some(l)),
-												filtermapi(d2.disj, \k, l -> if (k == dj) None() else Some(l))
-											)
-										)]
-									)
-								)),
+								cnf,
 								composeSubst(env.subst, s),
 								ResolUnknown()
 							)
@@ -54,20 +77,30 @@ contraryPairs(env : ResolutionEnv, d1 : FolDisj, ci : int, d2 : FolDisj, cj : in
 	)
 }
 
-runResolution(env : ResolutionEnv) -> ResolutionEnv {
-	if (env.status != ResolUnknown()) env else {
+resolutionCycle(env : ResolutionEnv) -> [ResolutionEnv] {
+	if (env.status != ResolUnknown()) [env] else {
 		if (exists(env.form.conj, \d -> d.disj == [])) {
-			ResolutionEnv(env with status = ResolUNSAT());
+			[ResolutionEnv(env with status = ResolUNSAT())];
 		} else {
-			foldi(env.form.conj, env, \i, acc, d1 ->
+			foldi(env.form.conj, [], \i, acc, d1 ->
 				foldi(env.form.conj, acc, \j, ac, d2 -> 
-					if (ac.status != ResolUnknown() || i == j) ac else {
-						fold(contraryPairs(env, d1, i, d2, j), ac, \a, e ->
-							runResolution(e)
-						)
+					if (i >= j) ac else {
+						concat(acc, contraryPairs(env, d1, i, d2, j))
 					}
 				)
 			)
 		}
 	}
 }
+
+runResolution(env : ResolutionEnv) -> ResolutionEnv {
+	es = for([env], 
+		\envs -> length(envs) > 0 && forall(envs, \e -> e.status == ResolUnknown()), 
+		\envs -> fold(envs, [], \acc, e -> concat(acc, resolutionCycle(e)))
+	);
+	switch(find(es, \e -> e.status != ResolUnknown())) {
+		Some(e): e;
+		None(): ResolutionEnv(env with status = ResolSAT());
+	}
+}
+

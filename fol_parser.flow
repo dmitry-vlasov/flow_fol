@@ -3,6 +3,7 @@ import fol_formula;
 
 export {
 	parseFolFormula(src : string) -> Maybe<FolFormula>;
+	parseFolFormulaDef(src : string, def : FolFormula) -> FolFormula;
 }
 
 fol_formula = 
@@ -39,5 +40,12 @@ parseFolFormula(src : string) -> Maybe<FolFormula> {
 	switch (formula) {
 		FolFormula(): Some(formula);
 		default: None()
+	}
+}
+
+parseFolFormulaDef(src : string, def : FolFormula) -> FolFormula {
+	switch (parseFolFormula(src)) {
+		Some(f): f;
+		None(): def;
 	}
 }
