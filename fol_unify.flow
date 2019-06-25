@@ -16,20 +16,27 @@ unifyTermsPair(t1 : FolTerm, t2 : FolTerm, msubst : Maybe<Tree<string, FolTerm>>
 	switch (msubst) {
 		None(): None();
 		Some(subst): {
+			check_new = \v : string, t : FolTerm -> 
+				switch (lookupTree(subst, v)) {
+					Some(t0): 
+						if (t0 == t) msubst else None();
+					None():
+						Some(composeSubst(subst, makeTree1(v, t)))
+				};
 			t1s = applySubstToTerm(subst, t1);
 			t2s = applySubstToTerm(subst, t2);
 			switch (t1s) {
 				FolVar(v1):
 					switch (t2s) {
 						FolVar(v2):
-							if (v1 == v2) msubst else Some(setTree(subst, v1, FolVar(v2)))
+							if (v1 == v2) msubst else check_new(v1, FolVar(v2))
 						FolFunc(__, __):
-							Some(setTree(subst, v1, t2s))
+							check_new(v1, t2s);
 					}
 				FolFunc(f1, args1):
 					switch (t2s) {
 						FolVar(v2): 
-							Some(setTree(subst, v2, t1s));
+							check_new(v2, t1s);
 						FolFunc(f2, args2): {
 							if (f1 == f2 && length(args1) == length(args2)) {
 								foldi(args1, msubst, \i, acc, arg1 ->

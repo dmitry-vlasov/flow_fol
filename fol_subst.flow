@@ -19,6 +19,8 @@ applySubstToDisj(subst : Tree<string, FolTerm>, d : FolDisj) -> FolDisj;
 
 composeSubst(s1 : Tree<string, FolTerm>, s2 : Tree<string, FolTerm>) -> Tree<string, FolTerm>;
 
+subst2string(s : Tree<string, FolTerm>) -> string;
+
 }
 
 applyRenamingToFormula(renaming : Tree<string, string>, f : FolFormula) -> FolFormula {
@@ -96,12 +98,10 @@ applySubstToFormula(subst : Tree<string, FolTerm>, f : FolFormula) -> FolFormula
 
 applySubstToTerm(subst : Tree<string, FolTerm>, term : FolTerm) -> FolTerm {
 	switch (term) {
-		FolFunc(name, args): FolFunc(name, map(args, \arg -> applySubstToTerm(subst, arg)));
+		FolFunc(name, args): 
+			FolFunc(name, map(args, \arg -> applySubstToTerm(subst, arg)));
 		FolVar(name): 
-			switch (lookupTree(subst, name)) {
-				Some(new_term): new_term;
-				None(): term;
-			}
+			lookupTreeDef(subst, name, term);
 	}
 }
 
@@ -142,8 +142,16 @@ applySubstToDisj(subst : Tree<string, FolTerm>, d : FolDisj) -> FolDisj {
 }
 
 composeSubst(s1 : Tree<string, FolTerm>, s2 : Tree<string, FolTerm>) -> Tree<string, FolTerm> {
-	s1_vars = buildSet(getTreeKeys(s2));
-	foldTree(s1, filterTree(s2, \v, _ -> !containsSet(s1_vars, v)),
-		\v, t, acc -> setTree(acc, v, applySubstToTerm(s2, t))
+	s1_vars = buildSet(getTreeKeys(s1));
+	foldTree(s1, 
+		filterTree(s2, \v, _ -> !containsSet(s1_vars, v)),
+		\v, t, acc -> {
+			new_t = applySubstToTerm(s2, t);
+			if (new_t == FolVar(v)) acc else setTree(acc, v, new_t)
+		}
 	)
+}
+
+subst2string(s : Tree<string, FolTerm>) -> string {
+	"{" + strGlue(map(tree2pairs(s), \p -> p.first + "=" + term2string(p.second)), ", ") + "}"
 }

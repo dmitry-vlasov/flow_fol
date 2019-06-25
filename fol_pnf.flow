@@ -28,11 +28,20 @@ pnf2string(f : FolPNF) -> string {
 	quant2string(f.quant) + cnf2string(f.cnf);
 }
 
-cnf2string(f : FolCNF) -> string {
-	lit2string = \l -> (if (l.sign) "" else "-. ") + formula2string(l.atom);
-	disj2string = \d -> "(" + strGlue(map(d.disj, \l -> lit2string(l)), " V ") + ")";
-	conj2string = \c -> "(" + strGlue(map(c.conj, \d -> disj2string(d)), " & ") + ")";
-	conj2string(f);
+cnf2string(c : FolCNF) -> string {
+	"(" + strGlue(map(c.conj, \d -> disj2string(d)), " & ") + ")"
+}
+
+/*conj2string(c : FolConj) -> string {
+	"(" + strGlue(map(c.conj, \d -> disj2string(d)), " & ") + ")"
+}*/
+
+disj2string(d : FolDisj) -> string {
+	"(" + strGlue(map(d.disj, \l -> lit2string(l)), " V ") + ")"
+}
+
+lit2string(l : FolLiteral) -> string {
+	(if (l.sign) "" else "-. ") + formula2string(l.atom)
 }
 
 }
