@@ -18,10 +18,10 @@ main() {
 Peano_ax_src = [
 	"A x. +(x, 0(), x)", 
 	"A x. A y. A z. (+(x, y, z) -> +(x, s(y), s(z)))",
-	"A x. *(x, 0(), 0())", 
-	"A x. *(x, s(0()), x)", 
+	"A x. *(x, 0(), 0())",
 	"A x. A y. A z. (E t. (+(t, x, z) & *(x, y, t)) -> *(x, s(y), z))",
 	"A x. (E y. +(y, y, x) -> even(x))",
+	//"A x. (even(x) -> E y. +(y, y, x))",
 ];
 
 Peano_tests_src = [
@@ -41,4 +41,5 @@ Peano_tests_src = [
 	"even(s(0()))",
 	"even(s(s(0())))",
 	"even(s(s(s(0()))))",
+	"A x. A y. A z.(((even(x) & even(y)) & +(x, y, z)) -> even(z))",
 ];
