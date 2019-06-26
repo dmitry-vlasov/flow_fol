@@ -1,5 +1,7 @@
 # flow_fol
-[DPLL](https://en.wikipedia.org/wiki/DPLL_algorithm) implementation in [flow9](https://github.com/area9innovation/flow9) language
+[DPLL](https://en.wikipedia.org/wiki/DPLL_algorithm) and
+[first_order_resolution](https://en.wikipedia.org/wiki/Resolution_(logic))
+implementation  in [flow9](https://github.com/area9innovation/flow9) language
 
 1.  Make sure, that python, java and jre is installed on your machine
 
