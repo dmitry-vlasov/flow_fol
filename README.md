@@ -15,9 +15,9 @@ implementation  in [flow9](https://github.com/area9innovation/flow9) language
 
 5. Build fol_prover.jar with command:
 
-    `build-with-flowc1 file=fol_prover.flow`
+    `build-with-flowc1 file=resolution_prover.flow`
 
 6. Run a test file with command:
 
-    `java -jar fol_prover.jar file=dpll_test`
+    `java -jar resolution_prover.jar`
 
