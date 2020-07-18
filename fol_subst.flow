@@ -37,6 +37,8 @@ applyRenamingToFormula(renaming : Tree<string, string>, f : FolFormula) -> FolFo
 			FolQuant(applyRenamingToQuantifier(renaming, q), applyRenamingToFormula(renaming, f1));
 		FolPred(name, args): 
 			FolPred(lookupTreeDef(renaming, name, name), map(args, \arg -> applyRenamingToTerm(renaming, arg)));
+		FolEq(x, y): 
+			FolEq(applyRenamingToTerm(renaming, x), applyRenamingToTerm(renaming, y));
 		FolTrue():  f;
 		FolFalse(): f;
 	}
@@ -70,9 +72,22 @@ applyRenamingToCNF(renaming : Tree<string, string>, f : FolCNF) -> FolCNF {
 applyRenamingToDisj(renaming : Tree<string, string>, d : FolDisj) -> FolDisj {
 	FolDisj(
 		map(d.disj, 
-			\lit -> FolLiteral(lit.sign, 
-				FolPred(lit.atom.name, map(lit.atom.args, \arg -> applyRenamingToTerm(renaming, arg)))
-			)
+			\lit -> {
+				switch (lit.atom) {
+					FolPred(name, args): {
+						FolLiteral(lit.sign, 
+							FolPred(name, map(args, \arg -> 
+								applyRenamingToTerm(renaming, arg)
+							))
+						);
+					}
+					FolEq(x, y): {
+						FolLiteral(lit.sign,
+							FolEq(applyRenamingToTerm(renaming, x), applyRenamingToTerm(renaming, y))
+						);
+					}
+				}
+			}
 		)
 	)
 }
@@ -91,6 +106,8 @@ applySubstToFormula(subst : Tree<string, FolTerm>, f : FolFormula) -> FolFormula
 			FolQuant(applySubstToQuantifier(subst, q), applySubstToFormula(subst, f1));
 		FolPred(name, args):
 			FolPred(name, map(args, \arg -> applySubstToTerm(subst, arg)));
+		FolEq(x, y):
+			FolEq(applySubstToTerm(subst, x), applySubstToTerm(subst, y));
 		FolTrue():  f;
 		FolFalse(): f;
 	}
@@ -134,9 +151,20 @@ applySubstToCNF(subst : Tree<string, FolTerm>, f : FolCNF) -> FolCNF {
 applySubstToDisj(subst : Tree<string, FolTerm>, d : FolDisj) -> FolDisj {
 	FolDisj(
 		map(d.disj, 
-			\lit -> FolLiteral(lit.sign, 
-				FolPred(lit.atom.name, map(lit.atom.args, \arg -> applySubstToTerm(subst, arg)))
-			)
+			\lit -> {
+				switch (lit.atom) {
+					FolPred(name, args): {
+						FolLiteral(lit.sign, 
+							FolPred(name, map(args, \arg -> applySubstToTerm(subst, arg)))
+						);
+					}
+					FolEq(x, y): {
+						FolLiteral(lit.sign, 
+							FolEq(applySubstToTerm(subst, x), applySubstToTerm(subst, y))
+						);
+					}
+				}
+			}
 		)
 	)
 }

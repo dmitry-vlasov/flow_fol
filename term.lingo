@@ -1,0 +1,24 @@
+term = digit+$s { createConstTerm($s) } |
+	"(" ws term:a1 ("+" | "-" | "*" | "/" | "%" | "^") $s ws term:a2 ")" ws { createBinTerm($s, :a1, :a2) } |
+	fol_name:n terms:as { FolFunc(:n, :as) } | fol_var;
+
+terms = zero_terms | one_term | some_terms;
+	zero_terms = "()" ws { createZeroTerms() };
+	one_term   = "(" ws term:t ")" ws { createOneTerm(:t) };
+	some_terms = "(" ws term:t1 ("," ws term)*:ts ")" ws { createSomeTerms(:t1, :ts) };
+
+quant =
+	("A" | "Forall") ws fol_var:v { FolForall(:v) } |
+	("E" | "Exists") ws fol_var:v { FolExists(:v) };
+fol_var = var_name:n { FolVar(:n) };
+
+fol_name = (!s char1)+$s ws { $s };
+var_name = (!s char2)+$s ws { $s };
+s = (' ' | '\t' | '\n' | '\r') +;
+char2 = !'{' !'}' !'(' !'&' !'V' !'+' !'-' !'*' !'/' !'%' !')' !',' !'.' !' ' !'^' '\u0000'-'\uFFFF';
+char1 = !'{' !'}' !'(' !')' !',' !'.' !' ' '\u0000'-'\uFFFF';
+
+id = letter+ $s ws { $s };
+letter = 'a'-'z';
+digit  = '0'-'9';
+ws = (' ' | '\t' | '\n' | '\r')*;

@@ -1,0 +1,240 @@
+import fol_dpll;
+import string_utils;
+import algorithms;
+
+export {
+	qdpllSAT(f : FolFormula, verbose : int) -> bool;
+}
+
+qdpllSAT(f : FolFormula, verbose : int) -> bool {
+	if (formulaContainsEquality(f)) {
+		println("QDPLL cannot be applied to the formula: " + formula2string(f) + " since it contains =");
+		false;
+	} else {
+		pnf = toPNF(f);
+		quants = pairs2tree(mapi(pnf.quant, \i, q -> Pair(q.var.name, QDPLL_Quant(q, i))));
+		if (verbose > 0) {
+			println("quantifiers:\n" + strIndent(
+				strGlue(map(
+					sortCustom(tree2pairs(quants), \p -> p.second.ind, true), 
+					\p -> p.first + "=" + (switch (p.second.quant) { FolExists(__): "E"; FolForall(__): "A"; })
+				), "\n")
+			));
+		}
+		env = QDPLL_Env(pnf.cnf, makeTree(), quants);
+		qdpllCNF(env, verbose, 0);
+	}
+}
+
+QDPLL_Quant(
+	quant : FolQuantifier,
+	ind : int
+);
+
+no_QDPLL_Quant = QDPLL_Quant(FolForall(FolVar("")), -1);
+
+QDPLL_Env(
+	form : FolCNF,
+	subst : Tree<string, bool>,
+	quants : Tree<string, QDPLL_Quant>
+);
+
+showQdpllEnv(e : QDPLL_Env) -> string {
+	"CNF: " + cnf2string(e.form) +
+	(if (sizeTree(e.subst) > 0) "\nsub: " + strGlue(map(tree2pairs(e.subst), \p -> p.first + "=" + b2s(p.second)), ", ") else "");
+}
+
+qdpllDoPropagateUnit(env : QDPLL_Env)  -> QDPLL_Env {
+	is_unit = \d -> {
+		length(d.disj) == 1 &&
+		switch (lookupTreeDef(env.quants, dpllVar(d.disj[0].atom), no_QDPLL_Quant).quant) {
+			FolForall(__): false;
+			FolExists(__): true;
+		}
+	}
+	switch (find(env.form.conj, is_unit)) {
+		Some(d): {
+			lit = d.disj[0];
+			qdpllApplySubst(
+				QDPLL_Env(env with  
+					subst = setTree(env.subst, dpllVar(lit.atom), lit.sign)
+				)
+			);
+		}
+		None(): env;
+	}
+}
+
+qdpllPropagateUnit(env : QDPLL_Env)  -> QDPLL_Env {
+	qdpllApplySubst(qdpllDoPropagateUnit(env));
+}
+
+qchooseVar(f : FolCNF) -> FolPred {
+	cast(f.conj[0].disj[0].atom : FolAtom -> FolPred);
+}
+
+qdpllPureLiterals(env : QDPLL_Env) -> QDPLL_Env {
+	vars = fold(env.form.conj, makeTree(), \acc, d ->
+		fold(d.disj, acc, 
+			\ac, lit -> {
+				pair = lookupTreeDef(ac, dpllVar(lit.atom), Pair(false, false));
+				if (lit.sign) {
+					setTree(ac, dpllVar(lit.atom), Pair(true, pair.second));
+				} else {
+					setTree(ac, dpllVar(lit.atom), Pair(pair.first, true));
+				}
+			}
+		)
+	);
+	set_polarity = \v, val -> {
+		switch (lookupTreeDef(env.quants, v, no_QDPLL_Quant).quant) {
+			FolExists(__): val;
+			FolForall(__): !val;
+		} 
+	}
+	qdpllApplySubst(QDPLL_Env(env with
+		subst = foldTree(vars, env.subst, \var, pair, acc -> 
+			if (pair.first && !pair.second) setTree(acc, var, set_polarity(var, true)) else 
+			if (!pair.first && pair.second) setTree(acc, var, set_polarity(var, false)) else acc
+		)
+	));
+}
+
+qdpllApplySubst(env : QDPLL_Env) -> QDPLL_Env {
+	new_cnf = filtermap(
+		env.form.conj, \c -> {
+			is_true = ref false;
+			filtered = filtermap(c.disj, \l -> {
+				switch (lookupTree(env.subst, dpllVar(l.atom))) {
+					Some(val): {
+						if (l.sign == val) {
+							is_true := true;
+						}
+						None();
+					}
+					None(): Some(l);
+				}
+			});
+			if (^is_true) None() else Some(FolDisj(filtered));
+		}
+	);
+	QDPLL_Env(env with form = FolCNF(new_cnf));
+}
+
+/*
+Definition (Universal Reduction [BKF95]
+----------------------------------------
+Given a clause C , universal reduction (UR) of C produces the clause
+UR(C ) := C \ {l ∈ C | q(l) = ∀, ∀l 0 ∈ C with q(l 0 ) = ∃ : var (l 0 ) < var (l)}
+where < is the linear variable ordering given by the quantifier prefix.
+- UR deletes locally “trailing” universal literals, i.e., shortens clauses.
+*/
+
+qdpllUniversalReduction(env : QDPLL_Env) -> QDPLL_Env {
+	new_cnf = map(
+		env.form.conj, \c -> {
+			exists_inds = fold(c.disj, [], \acc, l -> {
+				q = lookupTreeDef(env.quants, dpllVar(l.atom), no_QDPLL_Quant);
+				switch (q.quant) {
+					FolExists(__): concat(acc, [q.ind]);
+					FolForall(__): acc;
+				}
+			});
+			filtered = filtermap(c.disj, \l -> {
+				q = lookupTreeDef(env.quants, dpllVar(l.atom), no_QDPLL_Quant);
+				switch (q.quant) {
+					FolExists(__): Some(l);
+					FolForall(__): {
+						if (forall(exists_inds, \i -> i < q.ind)) None() else Some(l);
+					}
+				}
+			});
+			FolDisj(filtered);
+		}
+	);
+	qdpllApplySubst(QDPLL_Env(env with form = FolCNF(new_cnf)));
+}
+
+iterIndent(str : string, i : int) -> string {
+	if (i == 0) str else {
+		strIndent(iterIndent(str, i - 1));
+	}
+}
+
+counter_aa = ref 0;
+
+qdpllBooleanConstPropagation(e0 : QDPLL_Env, verbose : int, depth : int) -> QDPLL_Env {
+	e1 = qdpllUniversalReduction(e0);
+	if (verbose > 0 && e1 != e0) {
+		println(iterIndent("universal reduction:\n" + strIndent(showQdpllEnv(e1)), depth));
+	}
+	e2 = qdpllPropagateUnit(e1);
+	if (verbose > 0 && e2 != e1) {
+		println(iterIndent("unit propagated:\n" + strIndent(showQdpllEnv(e2)), depth));
+	}
+	e3 = qdpllPureLiterals(e2);
+	if (verbose > 0 && e3 != e2) {
+		println(iterIndent("pure literals resolved:\n" + strIndent(showQdpllEnv(e3)), depth));
+	}
+	if (e0.form == e3.form) e3 else qdpllBooleanConstPropagation(e3, verbose, depth);
+}
+
+qdpllCNF(env : QDPLL_Env, verbose : int, depth : int) -> bool {
+	if (^counter_aa > 10000) {
+		quit(0);
+		false;
+	} else {
+		counter_aa := ^counter_aa + 1;
+
+	if (verbose > 0) {
+		println(iterIndent("qdpllCNF enter:\n" + strIndent(showQdpllEnv(env)), depth));
+	}
+	e2 = qdpllBooleanConstPropagation(env, verbose, depth);
+	if (e2.form.conj == []) true else 
+	if (exists(e2.form.conj, \d -> d.disj == [])) false else {
+		var = qchooseVar(e2.form);
+		check = \or -> {
+			pos = \-> {
+				if (verbose > 0) {
+					println(iterIndent(var.name + "=TRUE", depth));
+				}
+				ret = qdpllCNF(qdpllApplySubst(QDPLL_Env(e2 with
+						subst = setTree(e2.subst, dpllVar(var), true)
+					)), verbose, depth + 1
+				);
+				if (verbose > 0) {
+					println(iterIndent("RESULT=" + b2s(ret), depth));
+				}
+				ret
+			}
+			neg = \-> {
+				if (verbose > 0) {
+					println(iterIndent(var.name + "=FALSE", depth));
+				}
+				ret = qdpllCNF(qdpllApplySubst(QDPLL_Env(e2 with
+						subst = setTree(e2.subst, dpllVar(var), false)
+					)), verbose, depth + 1
+				);
+				if (verbose > 0) {
+					println(iterIndent("RESULT=" + b2s(ret), depth));
+				}
+				ret
+			}
+			if (or) {
+				if (pos()) true else neg();
+			} else {
+				if (!pos()) false else neg();
+			}
+		}
+		switch (lookupTree(env.quants, var.name)) {
+			Some(q): {
+				switch (q.quant) {
+					FolForall(__): check(false);
+					FolExists(__): check(true);
+				}
+			}
+			None(): check(false);
+		}
+	}
+	}
+}

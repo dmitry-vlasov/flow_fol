@@ -13,9 +13,10 @@ export {
 	FolDisj(
 		disj : [FolLiteral]
 	);
+	FolAtom ::= FolPred, FolEq;
 	FolLiteral(
 		sign : bool,
-		atom : FolPred
+		atom : FolAtom
 	);
 	
 pnf2string(f : FolPNF) -> string {

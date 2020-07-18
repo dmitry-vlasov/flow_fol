@@ -44,37 +44,45 @@ reduceDisj(d : FolDisj) -> FolDisj {
 }
 	
 contraryPairs(env : ResolutionEnv, d1 : FolDisj, ci : int, d2 : FolDisj, cj : int) -> [ResolutionEnv] {
-	foldi(d1.disj, [], \di, acc, l1 ->
-		foldi(d2.disj, acc, \dj, ac, l2 ->
-			if (l1.atom.name == l2.atom.name && l1.sign != l2.sign) {
-				switch (unifyTermArrays(l1.atom.args, l2.atom.args)) {
-					Some(s): {
-						cnf = FolCNF(
-							concat(
-								env.form.conj,
-								[
-									reduceDisj(applySubstToDisj(s, FolDisj(
-										concat(
-											filtermapi(d1.disj, \k, l -> if (k == di) None() else Some(l)),
-											filtermapi(d2.disj, \k, l -> if (k == dj) None() else Some(l))
-										)
-									)))
-								]
-							)
-						);
-						concat(ac, [
-							ResolutionEnv(
-								cnf,
-								composeSubst(env.subst, s),
-								ResolUnknown()
-							)
-						])
+	foldi(d1.disj, [], \di, acc, l1 -> {
+		switch (l1.atom) {
+			FolPred(name1, args1):
+				foldi(d2.disj, acc, \dj, ac, l2 -> {
+					switch (l2.atom) {
+						FolPred(name2, args2):
+							if (name1 == name2 && l1.sign != l2.sign) {
+								switch (unifyTermArrays(args1, args2)) {
+									Some(s): {
+										cnf = FolCNF(
+											concat(
+												env.form.conj,
+												[
+													reduceDisj(applySubstToDisj(s, FolDisj(
+														concat(
+															filtermapi(d1.disj, \k, l -> if (k == di) None() else Some(l)),
+															filtermapi(d2.disj, \k, l -> if (k == dj) None() else Some(l))
+														)
+													)))
+												]
+											)
+										);
+										concat(ac, [
+											ResolutionEnv(
+												cnf,
+												composeSubst(env.subst, s),
+												ResolUnknown()
+											)
+										])
+									}
+									None(): ac;
+								}
+							} else ac
+						FolEq(x, y): ac;
 					}
-					None(): ac;
-				}
-			} else ac
-		)
-	)
+				})
+			FolEq(x, y): acc;
+		}
+	})
 }
 
 resolutionCycle(env : ResolutionEnv) -> [ResolutionEnv] {

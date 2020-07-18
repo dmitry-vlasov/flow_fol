@@ -4,41 +4,69 @@ import fol_formula;
 export {
 	parseFolFormula(src : string) -> Maybe<FolFormula>;
 	parseFolFormulaDef(src : string, def : FolFormula) -> FolFormula;
+	parseFolTerm(src : string) -> Maybe<FolTerm>;
 }
 
-fol_formula = 
-	"source = ws formula;
-	formula = 
-		\"(\" ws formula:a \"&\"  ws formula:b \")\" ws { FolAnd(:a, :b) } |
-		\"(\" ws formula:a \"V\"  ws formula:b \")\" ws { FolOr(:a, :b) } |
-		\"(\" ws formula:a \"->\" ws formula:b \")\" ws { FolImpl(:a, :b) } |
-		\"-.\" ws formula:a                  { FolNot(:a) } |
-		quant:q \".\" ws formula:a           { FolQuant(:q, :a) } |
-		\"T\" ws                             { FolTrue() } |
-		\"F\" ws                             { FolFalse() } |
-		name:n \"(\" ws term*:as \")\" ws    { FolPred(:n, :as) } |
-		name:n                               { createPred(:n) };
-	term = 
-		name:n \"(\" ws term*:as \")\" ws (\",\" ws)? { FolFunc(:n, :as) } |
-		name:n (\",\" ws)?                            { FolVar(:n) };
-	quant =
-		\"A\" ws var:v { FolForall(:v) } |
-		\"E\" ws var:v { FolExists(:v) };
-	var = name:n { FolVar(:n) };
-
-	name = (!s char_)+$s ws { $s };
-	s = ws_+;
-	ws = ws_*;
-	ws_ = ' ' | '\\t' | '\\n' | '\\r';
-	char_ = !'(' !'&' !'V' !'-' !')' !',' !'.' !' ' '\\u0000'-'\\uFFFF';
-"
-
-fol_parser = compilePegGrammar(fol_formula);
+fol_formula_parser = compilePegGrammar("#include formula.lingo");
 	
 parseFolFormula(src : string) -> Maybe<FolFormula> {
-	formula = parsic(fol_parser, src, SemanticActions(setTree(defaultPegActions.t, "createPred", \n -> FolPred(n[0], []))));
+	formula = parsic(fol_formula_parser, src, 
+		SemanticActions(
+			mergeTree(defaultPegActions.t,
+				pairs2tree([
+					Pair("createPred", \s -> FolPred(s[0], [])),
+					Pair("createBinPred", \s -> FolPred(s[0], [s[1], s[2]])),
+					Pair("createBinTerm", \s -> FolFunc(s[0], [s[1], s[2]])),
+					Pair("createFolEqual", \s ->
+						FolAnd(FolImpl(s[0], s[1]),FolImpl(s[1], s[0]))
+					),
+					/*Pair("createDefForm", \s -> {
+						def = FolFormulaDef(s[1], s[2]);
+						form_defs := setTree(^form_defs, s[0], def);
+						def
+					}),
+					Pair("createDefFunc", \s -> {
+						def = FolFunctionDef(s[1], s[2]);
+						func_defs := setTree(^func_defs, s[0], def);
+						def
+					}),*/
+					Pair("createZeroTerms", \__ -> cast([] : [flow] -> flow)),
+					Pair("createOneTerm", \s -> cast([s[0]] : [flow] -> flow)),
+					Pair("createSomeTerms", \s -> cast(concat([s[0]], s[1]) : [flow] -> flow)),
+					Pair("createConstTerm", \s -> FolFunc(s[0], [])),
+				])
+			)
+		)
+	);
 	switch (formula) {
 		FolFormula(): Some(formula);
+		default: None()
+	}
+}
+
+fol_term_parser = compilePegGrammar("#include term.lingo");
+	
+parseFolTerm(src : string) -> Maybe<FolTerm> {
+	term = parsic(fol_term_parser, src, 
+		SemanticActions(
+			mergeTree(defaultPegActions.t,
+				pairs2tree([
+					/*Pair("createPred", \s -> FolPred(s[0], [])),
+					Pair("createBinPred", \s -> FolPred(s[0], [s[1], s[2]])),
+					Pair("createBinTerm", \s -> FolFunc(s[0], [s[1], s[2]])),
+					Pair("createFolEqual", \s ->
+						FolAnd(FolImpl(s[0], s[1]),FolImpl(s[1], s[0]))
+					),*/
+					Pair("createZeroTerms", \__ -> cast([] : [flow] -> flow)),
+					Pair("createOneTerm", \s -> cast([s[0]] : [flow] -> flow)),
+					Pair("createSomeTerms", \s -> cast(concat([s[0]], s[1]) : [flow] -> flow)),
+					Pair("createConstTerm", \s -> FolFunc(s[0], [])),
+				])
+			)
+		)
+	);
+	switch (term) {
+		FolTerm(): Some(term);
 		default: None()
 	}
 }

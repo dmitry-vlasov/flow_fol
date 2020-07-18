@@ -1,0 +1,78 @@
+import fs/filesystem;
+import fol_parser;
+import fol_qdpll;
+
+main() {
+	verbose = s2i(getUrlParameterDef("verbose", "0"));
+	form_src =
+		if (isUrlParameterSet("formula")) 
+			[trim2(getUrlParameter("formula"), "\"")] 
+		else if (isUrlParameterSet("file")) {
+			file = getUrlParameterDef("file", "");
+			if (fileExists(file)) {
+				filter(strSplit(getFileContent(file), "\n"), \s -> s != "")
+			} else {
+				println("file: " + file + " is not found");
+				[]
+			}
+		} else test_set;
+	iter(form_src, 
+		\src -> {
+			switch (parseFolFormula(src)) {
+				Some(formula): {
+					println("Solving SAT problem for formula: " + formula2string(formula) + " ...");
+					println(formula2string(formula) + " validity: " + b2s(qdpllSAT(formula, verbose)) + "\n");
+				}
+				None(): println("parsing error");
+			}
+		}
+	);
+	quit(0);
+}
+
+test_set = [
+	"Ex.x", 
+	"Ex. -. x", 
+
+	"Ax.x", 
+	"Ax. -. x", 
+
+	"Ex. -. -. x", 
+	"Ex. -. -. -. x", 
+	"Ax. -. -. x", 
+	"Ax. -. -. -. x", 
+
+	"Ex.Ey.(x & y)", 
+	"Ax.Ay.(x & y)", 
+	"Ex.Ay.(x & y)", 
+	"Ax.Ey.(x & y)", 
+
+	"Ex.Ey.(x V y)", 
+	"Ax.Ay.(x V y)", 
+	"Ex.Ay.(x V y)", 
+	"Ax.Ey.(x V y)", 
+
+	"Ex. (x & -. x)",
+	"Ax. (x & -. x)",
+
+	"Ex.Ey ((x & y) -> -. y)",
+	"Ex.Ay ((x & y) -> -. y)",
+	"Ax.Ey ((x & y) -> -. y)",
+	"Ax.Ay ((x & y) -> -. y)",
+
+	"Ex.Ey.(((x & y) -> -. y) -> -. x)",
+	"Ex.Ay.(((x & y) -> -. y) -> -. x)",
+	"Ax.Ey.(((x & y) -> -. y) -> -. x)",
+	"Ax.Ay.(((x & y) -> -. y) -> -. x)",
+
+	"Ex.Ey.Ez.(((x V y) V z) & (((x V y) V -. z) & (((x V -. y) V z) & (((x V -. y) V -. z) & (((-. x V y) V z) & (((-. x V y) V -. z) & (((-. x V -. y) V z) & ((-. x V -. y) V -. z))))))))",
+
+	"Ex.Ey.-.((-. x -> y) -> (x V y))",
+	"Ex.Ay.-.((-. x -> y) -> (x V y))",
+	"Ax.Ey.-.((-. x -> y) -> (x V y))",
+	"Ax.Ay.-.((-. x -> y) -> (x V y))",
+
+	"E x_1. E x_3 . E x_4. A y_5. E x_2.(((-. x_1 V x_2 ) & ((x_3 V y_5) V -. x_2 )) & (((x_4 V -. y_5) V -. x_2 ) & (-. x_3 V -. x_4)))",
+	"A x. E y. ((x V -. y ) & (-. x V y ))",
+	"A y_5. E x_1. A y_2. E x_3. E x_4.((((-. y_5 V x_4) & (y_5 V -. x_4)) & (((x_1 V y_2) V -. x_4 ) & ((-. x_1 V x_3) V -. x_4 ))) & (-. y_2 V -. x_3 ))"
+];

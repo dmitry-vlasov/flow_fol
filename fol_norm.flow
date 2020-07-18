@@ -24,6 +24,7 @@ elimImpl(f : FolFormula) -> FolFormula {
 		FolQuant(quant, form): 
 			FolQuant(quant, elimImpl(form));
 		FolPred(name, args): f;
+		FolEq(x, y): f;
 		FolTrue():  f;
 		FolFalse(): f;
 	}
@@ -36,7 +37,7 @@ tightNegations(f : FolFormula) -> FolFormula {
 		FolOr(form1, form2):
 			FolOr(tightNegations(form1), tightNegations(form2));
 		FolImpl(premise, conclusion):
-			FolOr(FolNot(elimImpl(premise)), elimImpl(conclusion));
+			tightNegations(FolOr(FolNot(elimImpl(premise)), elimImpl(conclusion)));
 		FolNot(form): {
 			switch (form) {
 				FolAnd(form1, form2):
@@ -44,7 +45,7 @@ tightNegations(f : FolFormula) -> FolFormula {
 				FolOr(form1, form2):
 					FolAnd(tightNegations(FolNot(form1)), tightNegations(FolNot(form2)));
 				FolImpl(premise, conclusion):
-					FolAnd(tightNegations(premise), tightNegations(FolNot(conclusion)));
+					tightNegations(FolAnd(elimImpl(premise), elimImpl(FolNot(conclusion))));
 				FolNot(form1): 
 					tightNegations(form1);
 				FolQuant(quant, form1): {
@@ -53,16 +54,12 @@ tightNegations(f : FolFormula) -> FolFormula {
 						FolExists(var) : FolQuant(FolForall(var), tightNegations(FolNot(form1)));
 					}
 				}
-				FolPred(name, args): f;
-				FolTrue():  f;
-				FolFalse(): f;
+				FolAtomic(): f;
 			}
 		}
 		FolQuant(quant, form): 
 			FolQuant(quant, tightNegations(form));
-		FolPred(name, args): f;
-		FolTrue():  f;
-		FolFalse(): f;
+		FolAtomic(): f;
 	}
 }
 
@@ -76,16 +73,27 @@ makeFreshVarsSubst(vars1 : [string], vars2 : Set<string>) -> Tree<string, string
 	)
 }
 
-toPNF(f0 : FolFormula) -> FolPNF {
-	f = tightNegations(elimImpl(f0));
-	makeRenaming = \pf1, pf2 -> makeFreshVarsSubst(
+toPNF(f : FolFormula) -> FolPNF {
+	//println("to PNF: " + formula2string(f));
+	f1 = tightNegations(elimImpl(f));
+	//println("tight negations: " + formula2string(f1));
+	ret = doToPNF(f1);
+	//println("PNF: " + pnf2string(ret));
+	ret;
+}
+
+makeRenaming(pf1 : FolPNF, pf2 : FolPNF) -> Tree<string, string> {
+	makeFreshVarsSubst(
 		map(pf1.quant, \q -> q.var.name),
 		fold(pf2.quant, makeSet(), \acc, q -> insertSet(acc, q.var.name))
 	);
+}
+
+doToPNF(f : FolFormula) -> FolPNF {
 	switch (f) {
 		FolAnd(f1, f2): {
-			pf1 = toPNF(f1);
-			pf2 = toPNF(f2);
+			pf1 = doToPNF(f1);
+			pf2 = doToPNF(f2);
 			pf2ren = applyRenamingToPNF(makeRenaming(pf1, pf2), pf2);
 			FolPNF(
 				concat(pf1.quant, pf2ren.quant),
@@ -93,15 +101,14 @@ toPNF(f0 : FolFormula) -> FolPNF {
 			);
 		}
 		FolOr(f1, f2): {
-			pf1 = toPNF(f1);
-			pf2 = toPNF(f2);
+			pf1 = doToPNF(f1);
+			pf2 = doToPNF(f2);
 			varRenaming = makeRenaming(pf1, pf2);
 			FolPNF(
 				concat(pf1.quant, map(pf2.quant, \q -> applyRenamingToQuantifier(varRenaming, q))),
 				FolCNF(
-					fold(pf1.cnf.conj, [],
-						\acc, d1 -> fold(pf2.cnf.conj, acc,
-							\ac, d2 -> 
+					fold(pf1.cnf.conj, [], \acc, d1 -> 
+						fold(pf2.cnf.conj, acc, \ac, d2 -> 
 								concat(ac, [FolDisj(concat(d1.disj, applyRenamingToDisj(varRenaming, d2).disj))])
 						)
 					)
@@ -109,12 +116,14 @@ toPNF(f0 : FolFormula) -> FolPNF {
 			);
 		}
 		FolQuant(q, f1): {
-			pf = toPNF(f1);
+			pf = doToPNF(f1);
 			FolPNF(concat([q], pf.quant), pf.cnf);
 		}
 		FolNot(form): {
 			switch (form) {
 				FolPred(__,__): 
+					FolPNF([], FolCNF([FolDisj([FolLiteral(false, form)])]));
+				FolEq(x, y):
 					FolPNF([], FolCNF([FolDisj([FolLiteral(false, form)])]));
 				default:
 					// Non-tight negations: treat as a false formula
@@ -122,6 +131,8 @@ toPNF(f0 : FolFormula) -> FolPNF {
 			}
 		}
 		FolPred(name, args): 
+			FolPNF([], FolCNF([FolDisj([FolLiteral(true, f)])]));
+		FolEq(x, y): 
 			FolPNF([], FolCNF([FolDisj([FolLiteral(true, f)])]));
 		FolTrue(): 
 			FolPNF([], FolCNF([]));
@@ -133,13 +144,19 @@ toPNF(f0 : FolFormula) -> FolPNF {
 	}
 }
 
+
 skolemization(f : FolPNF) -> FolPNF {
 	used_names = buildSet(
 		getTreeKeys(fold(f.cnf.conj, makeTree(),
 			\acc, d -> fold(d.disj, acc, \ac, l -> 
-				fold(l.atom.args, ac, \a, arg ->
-					doTermSign(arg, a)
-				)
+				switch (l.atom) {
+					FolPred(__, args):
+						fold(args, ac, \a, arg ->
+							doTermSign(arg, a)
+						);
+					FolEq(x, y): 
+						doTermSign(x, doTermSign(y, ac));
+				}
 			)
 		))
 	);

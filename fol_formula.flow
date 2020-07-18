@@ -1,4 +1,5 @@
 import ds/tree;
+import ds/set;
 import string;
 
 export {
@@ -9,8 +10,9 @@ export {
 		FolNot(form : FolFormula);
 		FolQuant(quant : FolQuantifier, form : FolFormula);
 
-	FolAtomic ::= FolPred, FolTrue, FolFalse;
+	FolAtomic ::= FolPred, FolEq, FolTrue, FolFalse;
 		FolPred(name : string, args : [FolTerm]);
+		FolEq(x : FolTerm, y : FolTerm);
 		FolTrue();
 		FolFalse();
 
@@ -32,6 +34,11 @@ export {
 			arity : int,
 		);
 
+	FolFlatterm(nodes : FolFlattermNode);
+	FolFlattermNode ::= FolFlattermVar, FolFlattermFunc;
+		FolFlattermVar(name : string);
+		FolFlattermFunc(name : string, arity : int, len : int);
+
 formulaSign(f : FolFormula) -> Tree<string, FolSymb> {
 	doFormulaSign(f, makeTree())
 }
@@ -48,6 +55,7 @@ doFormulaSign(f : FolFormula, acc : Tree<string, FolSymb>) -> Tree<string, FolSy
 				setTree(acc, n, FolPredSymb(n, length(args))),
 				\ac, arg -> doTermSign(arg, ac)
 			);
+		FolEq(x, y): doTermSign(x, doTermSign(y, acc))
 		FolTrue(): acc;
 		FolFalse(): acc;
 	}
@@ -82,6 +90,7 @@ formula2string(f : FolFormula) -> string {
 			if (args == []) n else {
 				n + "(" + strGlue(map(args, \arg -> term2string(arg)), ", ") + ")";
 			}
+		FolEq(x, y): "(" + term2string(x) + " = " + term2string(y) + ")";
 		FolTrue(): "T";
 		FolFalse(): "F";
 	}
@@ -94,4 +103,84 @@ term2string(t : FolTerm) -> string {
 	}
 }
 
+termVars(t : FolTerm) -> Set<string>;
+formulaVars(f : FolFormula) -> Set<string>;
+formulaFreeVars(f : FolFormula) -> Set<string>;
+conjOf(fs : [FolFormula]) -> FolFormula;
+formulaContainsEquality(f : FolFormula) -> bool;
+universalClosure(f : FolFormula) -> FolFormula;
+
+}
+
+conjOf(fs : [FolFormula]) -> FolFormula {
+	if (length(fs) == 0) FolTrue() else 
+	fold(tail(fs), fs[0], \acc, f -> FolAnd(acc, f));
+}
+
+
+termVars(t : FolTerm) -> Set<string> {
+	doTermVars(t, makeSet());
+}
+
+doTermVars(t : FolTerm, acc : Set<string>) -> Set<string> {
+	switch (t) {
+		FolVar(n): insertSet(acc, n); 
+		FolFunc(n, args): fold(args, acc, \ac, arg -> doTermVars(arg, ac));
+	}
+}
+
+formulaVars(f : FolFormula) -> Set<string> {
+	doFormulaVars(f, makeSet());
+}
+
+doFormulaVars(f : FolFormula, acc : Set<string>) -> Set<string> {
+	switch (f) {
+		FolAnd(f1, f2):   doFormulaVars(f1, doFormulaVars(f2, acc));
+		FolOr(f1, f2):    doFormulaVars(f1, doFormulaVars(f2, acc));
+		FolImpl(f1, f2):  doFormulaVars(f1, doFormulaVars(f2, acc));
+		FolNot(f1):       doFormulaVars(f1, acc);
+		FolQuant(q, f1):  doFormulaVars(f1, insertSet(acc, q.var.name));
+		FolPred(n, args): fold(args, acc, \ac, arg -> doTermVars(arg, ac));
+		FolEq(x, y):      doTermVars(x, doTermVars(y, acc));
+		FolTrue():        acc;
+		FolFalse():       acc;
+	}
+}
+
+formulaFreeVars(f : FolFormula) -> Set<string> {
+	doFormulaFreeVars(f, makeSet());
+}
+
+doFormulaFreeVars(f : FolFormula, acc : Set<string>) -> Set<string> {
+	switch (f) {
+		FolAnd(f1, f2):   doFormulaFreeVars(f1, doFormulaFreeVars(f2, acc));
+		FolOr(f1, f2):    doFormulaFreeVars(f1, doFormulaFreeVars(f2, acc));
+		FolImpl(f1, f2):  doFormulaFreeVars(f1, doFormulaFreeVars(f2, acc));
+		FolNot(f1):       doFormulaFreeVars(f1, acc);
+		FolQuant(q, f1):  removeSet(doFormulaFreeVars(f1, acc), q.var.name);
+		FolPred(n, args): fold(args, acc, \ac, arg -> doTermVars(arg, ac));
+		FolEq(x, y):      doTermVars(x, doTermVars(y, acc));
+		FolTrue():        acc;
+		FolFalse():       acc;
+	}
+}
+
+formulaContainsEquality(f : FolFormula) -> bool {
+	switch (f) {
+		FolAnd(f1, f2):   formulaContainsEquality(f1) || formulaContainsEquality(f2);
+		FolOr(f1, f2):    formulaContainsEquality(f1) || formulaContainsEquality(f2);
+		FolImpl(f1, f2):  formulaContainsEquality(f1) || formulaContainsEquality(f2);
+		FolNot(f1):       formulaContainsEquality(f1);
+		FolQuant(__, f1): formulaContainsEquality(f1);
+		FolPred(n, args): (n == "=") && (length(args) == 2);
+		FolEq(x, y):      true;
+		FolTrue():        false;
+		FolFalse():       false;
+	}
+}
+
+universalClosure(f : FolFormula) -> FolFormula {
+	foldSet(formulaFreeVars(f), f, \acc, v ->
+		FolQuant(FolForall(FolVar(v)), acc)
+	);
 }

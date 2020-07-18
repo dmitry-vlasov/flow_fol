@@ -1,0 +1,185 @@
+import fol_formula;
+
+export {
+
+FolFlatTerm(nodes : [FolFlatNode]);
+FolFlatNode ::= FolFlatVar, FolFlatFunc;
+	FolFlatVar(var : string);
+	FolFlatFunc(fun : string, arity : int, len : int);
+
+flattenTerm(t : FolTerm) -> FolFlatTerm;
+unflattenTerm(t : FolFlatTerm) -> Maybe<FolTerm>;
+flatterm2s(t : FolFlatTerm) -> string;
+
+unifyFlatTerms(ts1 : [FolFlatTerm], ts2 : [FolFlatTerm]) -> Maybe<Tree<string, FolFlatTerm>>;
+
+applyFlatSubstToFlatTerm(term : FolFlatTerm, subst : Tree<string, FolFlatTerm>) -> FolFlatTerm;
+composeFlatSubst(s1 : Tree<string, FolFlatTerm>, s2 : Tree<string, FolFlatTerm>) -> Tree<string, FolFlatTerm>;
+
+}
+
+flattenTerm(t : FolTerm) -> FolFlatTerm {
+	switch(t) {
+		FolVar(v): FolFlatTerm([FolFlatVar(v)]);
+		FolFunc(fn, args): {
+			flat_args = concatA(map(args, \arg -> flattenTerm(arg).nodes));
+			FolFlatTerm(concat([FolFlatFunc(fn, length(args), length(flat_args))], flat_args));
+		}
+	}
+}
+
+unflattenTerm(t : FolFlatTerm) -> Maybe<FolTerm> {
+	maybeBind(doUnflattenTerm(t, 0), \ret ->
+		if (ret.second == length(t.nodes)) Some(ret.first) else None()
+	);
+}
+
+doUnflattenTerm(t : FolFlatTerm, i : int) -> Maybe<Pair<FolTerm, int>> {
+	if (i < 0 || i >= length(t.nodes)) None() else {
+		switch (t.nodes[i]) {
+			FolFlatVar(v): Some(Pair(FolVar(v), i + 1));
+			FolFlatFunc(fn, arity, len): {
+				maybeMap(
+					fold(enumFromTo(0, arity - 1), Some(Pair([], i + 1)), \acc, n ->
+						maybeBind(acc, \ac -> 
+							maybeMap(doUnflattenTerm(t, ac.second), \tx -> 
+								Pair(concat(ac.first, [tx.first]), tx.second)
+							)
+						)
+					),
+					\args -> Pair(FolFunc(fn, args.first), args.second)
+				);
+			}
+		}
+	}
+}
+
+flatterm2s(t : FolFlatTerm) -> string {
+	strGlue(map(t.nodes, \n -> 
+		switch (n) {
+			FolFlatVar(var): var;
+			FolFlatFunc(fun, arity, len):
+				fun + "^" + i2s(arity) + "_" + i2s(len);
+		}
+	), ", ");
+}
+
+unifyFlatTerms(ts1 : [FolFlatTerm], ts2 : [FolFlatTerm]) -> Maybe<Tree<string, FolFlatTerm>> {
+	if (length(ts1) != length(ts2)) None() else {
+		foldi(ts1, Some(makeTree()), \i, acc, t1 -> unifyFlatTermsPair(t1, ts2[i], acc))
+	}
+}
+unifyFlatTermsPair(t1 : FolFlatTerm, t2 : FolFlatTerm, msubst : Maybe<Tree<string, FolFlatTerm>>) -> Maybe<Tree<string, FolFlatTerm>> {
+	maybeBind(msubst, \sub -> {
+		maybeMap(
+			for(Some(Triple(0, 0, sub)),
+				\acc -> eitherMap(acc, \ac -> ac.first >= length(t1.nodes) && ac.second >= length(t2.nodes), false),
+				\acc -> {
+					eitherMap(acc, \ac -> {
+						i = ac.first;
+						j = ac.second;
+						switch (t1.nodes[i]) {
+							FolFlatVar(v1): {
+								switch (t2.nodes[j]) {
+									FolFlatVar(v2): {
+										switch () {
+										}
+									}
+									FolFlatFunc(f2, a2, l2): {
+									
+									}
+								}
+							}
+							FolFlatFunc(f1, a1, l1): {
+								switch (t2.nodes[j]) {
+									FolFlatVar(v2): {
+									
+									}
+									FolFlatFunc(f2, a2, l2): {
+									
+									}
+								}
+							}
+						}
+					})
+				}
+			),
+			\triple -> triple.third
+		)
+	})
+}
+
+ApplyFlatSubstStack(
+	parent : Maybe<ApplyFlatSubstStack>,
+	len : int
+);
+
+applyFlatSubstToFlatTermComputeLen(arity : int, stack_len : Pair<ApplyFlatSubstStack, int>) -> Pair<ApplyFlatSubstStack, int> {
+	if (arity == 0) stack_len else {
+		switch (stack_len.first.parent) {
+			Some(p): 
+				applyFlatSubstToFlatTermComputeLen(
+					arity - 1, 
+					Pair(p, stack_len.first.len + stack_len.second)
+				);
+			None(): {
+				println("empty stack pop at applyFlatSubstToFlatTermComputeLen");
+				quit(0);
+				stack_len;
+			}
+		}
+	}
+}
+
+ApplyFlatSubstAcc(
+	nodes : [FolFlatNode],
+	stack : ApplyFlatSubstStack
+);
+
+applyFlatSubstToFlatTerm(term : FolFlatTerm, s : Tree<string, FolFlatTerm>) -> FolFlatTerm {
+	FolFlatTerm(reverseA(foldr(term.nodes, ApplyFlatSubstAcc([], ApplyFlatSubstStack(None(), 0)), 
+		\acc, n -> {
+			switch (n) {
+				FolFlatFunc(nm, a, l): {
+					st_len = applyFlatSubstToFlatTermComputeLen(a, Pair(acc.stack, 0));
+					ApplyFlatSubstAcc(
+						concat(acc.nodes, [FolFlatFunc(nm, a, st_len.second)]),
+						ApplyFlatSubstStack(Some(st_len.first), st_len.second + 1)
+					);
+				}
+				FolFlatVar(v): {
+					switch (lookupTree(s, v)) {
+						Some(x):
+							ApplyFlatSubstAcc(
+								concat(acc.nodes, reverseA(x.nodes)),
+								ApplyFlatSubstStack(Some(acc.stack), length(x.nodes))
+							);
+						None(): 
+							ApplyFlatSubstAcc(
+								concat(acc.nodes, [n]),
+								ApplyFlatSubstStack(Some(acc.stack), 1)
+							);
+					}
+				}
+			}
+		}).nodes));
+}
+
+composeFlatSubst(s1 : Tree<string, FolFlatTerm>, s2 : Tree<string, FolFlatTerm>) -> Tree<string, FolFlatTerm> {
+	s1_vars = buildSet(getTreeKeys(s1));
+	is_var = \t : FolFlatTerm, v : string -> {
+		if (length(t.nodes) != 1) false else {
+			switch (t.nodes[0]) {
+				FolFlatVar(w): v == w;
+				default: false;
+			}
+		}
+	}
+	foldTree(s1, 
+		filterTree(s2, \v, _ -> !containsSet(s1_vars, v)),
+		\v, t, acc -> {
+			new_t = applyFlatSubstToFlatTerm(t, s2);
+			if (is_var(new_t, v)) acc else setTree(acc, v, new_t)
+		}
+	)
+}

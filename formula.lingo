@@ -1,0 +1,37 @@
+formula = 
+	"(" ws formula:a "&"   ws formula:b ")" ws { FolAnd(:a, :b) } |
+	"(" ws formula:a "V"   ws formula:b ")" ws { FolOr(:a, :b) } |
+	"(" ws formula:a "->"  ws formula:b ")" ws { FolImpl(:a, :b) } |
+	"(" ws formula:a "<->" ws formula:b ")" ws { createFolEqual(:a, :b) } |
+	"-." ws formula:a                  { FolNot(:a) } |
+	quant:q "." ws formula:a           { FolQuant(:q, :a) } |
+	"T" ws                             { FolTrue() } |
+	"F" ws                             { FolFalse() } |
+	fol_name:n terms:as { FolPred(:n, :as) } |
+	"(" ws term:a1 ( "<=" | ">=" | "<" | ">" | "==" | "=" | "!=") $s ws term:a2 ")" ws { createBinPred($s, :a1, :a2) } |
+	fol_name:n                         { createPred(:n) };
+
+term = digit+$s { createConstTerm($s) } |
+	"(" ws term:a1 ("+" | "-" | "*" | "/" | "%" | "^") $s ws term:a2 ")" ws { createBinTerm($s, :a1, :a2) } |
+	fol_name:n terms:as { FolFunc(:n, :as) } | fol_var;
+
+terms = zero_terms | one_term | some_terms;
+	zero_terms = "()" ws { createZeroTerms() };
+	one_term   = "(" ws term:t ")" ws { createOneTerm(:t) };
+	some_terms = "(" ws term:t1 ("," ws term)*:ts ")" ws { createSomeTerms(:t1, :ts) };
+
+quant =
+	("A" | "Forall") ws fol_var:v { FolForall(:v) } |
+	("E" | "Exists") ws fol_var:v { FolExists(:v) };
+fol_var = var_name:n { FolVar(:n) };
+
+fol_name = (!s char1)+$s ws { $s };
+var_name = (!s char2)+$s ws { $s };
+s = (' ' | '\t' | '\n' | '\r') +;
+char2 = !'{' !'}' !'(' !'&' !'V' !'+' !'-' !'*' !'/' !'%' !')' !',' !'.' !' ' !'^' '\u0000'-'\uFFFF';
+char1 = !'{' !'}' !'(' !')' !',' !'.' !' ' '\u0000'-'\uFFFF';
+
+id = letter+ $s ws { $s };
+letter = 'a'-'z';
+digit  = '0'-'9';
+ws = (' ' | '\t' | '\n' | '\r')*;

@@ -1,0 +1,299 @@
+import math/math;
+import fol_unify;
+import fol_norm;
+import fol_flatterm;
+
+export {
+	resolutionUNSAT1(f : FolFormula, limit : double) -> Maybe<bool>;
+	resolutionEntailment1(premises : [FolFormula], conclusion : FolFormula, limit : double) -> Maybe<bool>;
+}
+
+resolutionEntailment1(premises : [FolFormula], conclusion : FolFormula, limit : double) -> Maybe<bool> {
+	goal = if (premises == []) conclusion else {
+		FolAnd(fold(tail(premises), premises[0], \acc, p -> FolAnd(acc, p)), FolNot(conclusion));
+	}
+	resolutionUNSAT1(goal, limit);
+}
+
+resolutionUNSAT1(f0 : FolFormula, limit : double) -> Maybe<bool> {
+	f = addEqualityAx(f0);
+	runResolution1(ResEnv(prepareClauses(skolemization(toPNF(f)).cnf), 0), limit);
+}
+
+Clause(
+	pos : Tree<string, Set<[FolTerm]>>,
+	neg : Tree<string, Set<[FolTerm]>>
+);
+
+addEqualityAx(f : FolFormula) -> FolFormula {
+	println("formula:");
+	println(formula2string(f));
+	if (!formulaContainsEquality(f)) f else {
+		signature = formulaSign(f);
+		eq_axioms = [
+			FolEq(FolVar("x"), FolVar("x")),
+			FolImpl(FolEq(FolVar("x"), FolVar("y")), FolEq(FolVar("y"), FolVar("x"))),
+			FolImpl(
+				FolAnd(FolEq(FolVar("x"), FolVar("y")), FolEq(FolVar("y"), FolVar("z"))),
+				FolEq(FolVar("x"), FolVar("z"))
+			)
+		];
+		eq_sign_ax = foldTree(formulaSign(f), [], \__, symb, acc ->
+			switch (symb) {
+				FolFuncSymb(name, arity): {
+					if (arity == 0) acc else {
+						inds = enumFromTo(1, arity);
+						prem = conjOf(map(inds, \i -> 
+							FolEq(FolVar("x_" + i2s(i)), FolVar("y_" + i2s(i)))
+						));
+						conc = FolEq(
+							FolFunc(name, map(inds, \i -> FolVar("x_" + i2s(i)))),
+							FolFunc(name, map(inds, \i -> FolVar("y_" + i2s(i))))
+						);
+						concat(acc, [FolImpl(prem, conc)]);
+					}
+				}
+				FolPredSymb(name, arity): {
+					if (arity == 0 || name == "=") acc else {
+						inds = enumFromTo(1, arity);
+						prem = conjOf(
+							concat(
+								map(inds, \i -> 
+									FolEq(FolVar("x_" + i2s(i)), FolVar("y_" + i2s(i)))
+								),
+								[FolPred(name, map(inds, \i -> FolVar("x_" + i2s(i))))]
+							)
+						);
+						conc = FolPred(name, map(inds, \i -> FolVar("y_" + i2s(i))));
+						concat(acc, [FolImpl(prem, conc)]);
+					}
+				}
+			}
+		);
+		all_ax = map(concat3([f], eq_axioms, eq_sign_ax), universalClosure);
+		println("eq axioms:");
+		iter(all_ax, \a -> println(formula2string(a)));
+		conjOf(all_ax);
+	}
+}
+
+normalizeArg(term : FolTerm, acc : Pair<int, Tree<string, FolVar>>, prefix : string) -> Pair<int, Tree<string, FolVar>> {
+	switch (term) {
+		FolVar(n): {
+			switch (lookupTree(acc.second, n)) {
+				Some(v): acc;
+				None(): Pair(acc.first + 1, setTree(acc.second, n, FolVar(prefix + "_" + i2s(acc.first))));
+			}
+		}
+		FolFunc(n, args): 
+			fold(args, acc, \ac, arg -> normalizeArg(arg, ac, prefix));
+	}
+}
+
+normalizeArgs(args : [FolTerm], prefix : string) -> [FolTerm] {
+	fold(args, Triple([], 0, makeTree()), \acc, arg -> {
+			p = normalizeArg(arg, Pair(acc.second, acc.third), prefix);
+			Triple(concat(acc.first, [applySubstToTerm(p.second, arg)]), p.first, p.second);
+		}
+	).first;
+}
+
+normalizeClause(cl : Clause, prefix : string) -> Clause {
+	Clause(
+		mapTree(cl.pos, \set -> mapSet(set, \args -> normalizeArgs(args, prefix))),
+		mapTree(cl.neg, \set -> mapSet(set, \args -> normalizeArgs(args, prefix)))
+	);
+}
+
+args2s(args : [FolTerm]) -> string {
+	"(" + strGlue(map(args, term2string), ", ") + ")";
+}
+
+tree2s(tree : Tree<string, Set<[FolTerm]>>) -> string {
+	strGlue(
+		concatA(map(tree2pairs(tree), \p ->
+			map(set2array(p.second), \args ->
+				p.first + "(" + strGlue(map(args, term2string), ", ") + ")"
+			)
+		)), " \\/ "
+	);
+}
+
+clause2s(cl : Clause) -> string {
+	tree2s1 = \tree, sign_ -> concatA(
+		map(tree2pairs(tree), \p ->
+			map(set2array(p.second), \args ->
+				((if (sign_) "" else "!") + p.first + "(" + strGlue(map(args, term2string), ", ") + ")")
+			)
+		)
+	);
+	"[" + strGlue(concat(tree2s1(cl.pos, true), tree2s1(cl.neg, false)), " \\/ ") + "]";
+}
+
+clauses2s(cls : [Clause]) -> string {
+	strGlue(map(cls, clause2s), "\n");
+}
+
+applySubstToClause(sub : Tree<string, FolTerm>, clause : Clause) -> Clause {
+	apply_to_tree = \tree -> 
+		mapTree(tree, \set -> 
+			mapSet(set, \args -> 
+				map(args, \term -> 
+					applySubstToTerm(sub, term)
+				)
+			)
+		);
+	Clause(
+		apply_to_tree(clause.pos),
+		apply_to_tree(clause.neg),
+	);
+}
+
+prepareClauses(cnf : FolCNF) -> [Clause] {
+	fold_disj = \d -> fold(d, makeTree(), \acc, lit -> 
+		switch (lit.atom) {
+			FolPred(name, args):
+				setTree(acc, name, 
+					insertSet(lookupTreeDef(acc, name, makeSet()), args)
+				);
+			FolEq(x, y):
+				setTree(acc, "=", 
+					insertSet(lookupTreeDef(acc, "=", makeSet()), [x, y])
+				);
+		}
+	);
+	map(cnf.conj, \d ->
+		normalizeClause(Clause(
+			fold_disj(filter(d.disj, \lit -> lit.sign)),
+			fold_disj(filter(d.disj, \lit -> !lit.sign))
+		), "x")
+	);
+}
+
+
+resolve(clause1 : Clause, clause2 : Clause) -> [Clause] {
+	do_resolve = \c1, c2 -> foldTree(c1.pos, [], \name, args_arr1, acc ->
+		switch (lookupTree(c2.neg, name)) {
+			Some(args_arr2): {
+				foldSet(args_arr1, acc, \ac, args1 ->
+					foldSet(args_arr2, ac, \a, args2 -> 
+						switch (unifyTermArrays(args1, args2)) {
+							Some(sub): {
+								new_pos = removeSet(args_arr1, args1);
+								new_neg = removeSet(args_arr2, args2);
+								resolvent = applySubstToClause(sub, 
+									Clause(
+										mergeTreeCustom(
+											if (!isEmptySet(new_pos)) setTree(c1.pos, name, new_pos) else removeFromTree(c1.pos, name),
+											c2.pos, 
+											\__, s1, s2 -> mergeSets(s1, s2)
+										),
+										mergeTreeCustom(
+											c1.neg, 
+											if (!isEmptySet(new_neg)) setTree(c2.neg, name, new_neg) else removeFromTree(c2.neg, name),
+											\__, s1, s2 -> mergeSets(s1, s2)),
+									)
+								);
+								concat(a, [resolvent]);
+							}
+							None(): a;
+						}
+					)
+				);
+			}
+			None(): acc;
+		}
+	);
+	ret = map(concat(do_resolve(clause1, clause2), do_resolve(clause2, clause1)), \cl -> normalizeClause(cl, "x"));
+	if (ret == []) {
+		//println("NO RESOLVENT");
+	} else {
+		/*println("to resolve:");
+		println(clause2s(clause1));
+		println(clause2s(clause2));
+		println("RESOLVENTS");
+		iteri(ret, \i, cl -> println(i2s(i) + ": " + clause2s(cl) + " is false? " + b2s(falseClause(cl))));
+		println("");*/
+	}
+	ret;
+}
+
+factor(clause : Clause) -> Clause {
+	factor_set = \set -> foldSet(set, makeSet(), \acc, args1 -> {
+			m = foldSet(acc, None(), \ac, args2 -> 
+				switch (ac) {
+					Some(__): ac;
+					None(): {
+						switch (unifyTermArrays(args1, args2)) {
+							Some(sub): {
+								Some(Pair(args2, map(args1, \term -> applySubstToTerm(sub, term))));
+							}
+							None(): None();
+						}
+					}
+				}
+			);
+			switch (m) {
+				Some(p): insertSet(removeSet(acc, p.first), p.second);
+				None(): insertSet(acc, args1);
+			}
+		}
+	);
+	Clause(
+		mapTree(clause.pos, factor_set),
+		mapTree(clause.neg, factor_set),
+	)
+}
+
+equalClauses(c1 : Clause, c2 : Clause) -> bool {
+	eq_trees = \t1, t2 -> {
+		if (sizeTree(t1) != sizeTree(t2)) false else {
+			!existsTree(t1, \name, set1 ->
+				switch (lookupTree(t2, name)) {
+					Some(set2): !equalSet(set1, set2);
+					None(): true;
+				}
+			);
+		}
+	}
+	eq_trees(c1.pos, c2.pos) && eq_trees(c1.neg, c2.neg);
+}
+
+falseClause(cl : Clause) -> bool {
+	isEmptyTree(cl.pos) && isEmptyTree(cl.neg);
+}
+
+ResEnv(
+	clauses : [Clause],
+	ind : int
+);
+
+isFinalEnv(env : ResEnv) -> bool {
+	exists(env.clauses, falseClause) || env.ind == length(env.clauses)
+}
+
+runResolution1(env : ResEnv, limit : double) -> Maybe<bool> {
+	ind = ref 0;
+	start = timestamp();
+	
+	println("start:");
+	println(clauses2s(env.clauses));
+	
+	final = for(env, 
+		\e -> !(isFinalEnv(e) || timestamp() - start > limit * 1000.0), 
+		\e -> {
+			new_clauses = foldi(e.clauses, e.clauses, \i, acc, c1 ->
+				foldi(e.clauses, acc, \j, ac, c2 ->
+					if ((i < e.ind && j < e.ind) || i >= j) ac else {
+						fold(map(resolve(c1, normalizeClause(c2, "y")), factor), ac, \a, clause ->
+							if (exists(a, \cl -> equalClauses(cl, clause))) ac else concat(ac, [clause])
+						)
+					}
+				)
+			);
+			println("step: clauses=" + i2s(length(new_clauses)));
+			ResEnv(new_clauses, length(e.clauses));
+		}
+	);
+	if (exists(final.clauses, falseClause)) Some(true) else None();
+}
